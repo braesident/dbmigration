@@ -8,7 +8,7 @@ use DateTimeImmutable;
 use InvalidArgumentException;
 use PDO;
 
-final class Migration
+class Migration
 {
   private $description;
 
