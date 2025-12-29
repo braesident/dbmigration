@@ -1,0 +1,27 @@
+{
+  "name": "braesident/dbmigration",
+  "description": "Migration Helper for your project database.",
+  "type": "library",
+  "homepage": "https://exunova.de",
+  "authors": [
+    {
+      "name": "Sebastian Braesicke"
+    }
+  ],
+  "require": {
+    "php": ">=8.0"
+  },
+  "require-dev": {
+    "friendsofphp/php-cs-fixer": "^3.90",
+    "squizlabs/php_codesniffer": "^4.0"
+  },
+  "license": "MIT",
+  "config": {
+    "sort-packages": true
+  },
+  "autoload": {
+    "psr-4": {
+      "Braesident\\DbMigration\\": "src/"
+    }
+  }
+}

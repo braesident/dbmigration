@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "migration.schema.json",
+  "title": "DbMigration JSON",
+  "description": "Schema für Migrationen (up/down) mit Builder-Definitionen oder direkten Dialekt-SQLs (mysql/sqlsrv).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {},
+    "up": {
+      "$ref": "#/$defs/steps"
+    },
+    "down": {
+      "$ref": "#/$defs/steps"
+    }
+  },
+  "required": [
+    "up",
+    "down"
+  ],
+  "$defs": {
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/builderStep"
+        },
+        {
+          "$ref": "#/$defs/dialectStep"
+        }
+      ]
+    },
+    "builderStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "builder": {
+          "type": "string",
+          "enum": [
+            "sql",
+            "sqlbuilder"
+          ]
+        },
+        "definition": {
+          "$ref": "#/$defs/definition"
+        }
+      },
+      "required": [
+        "builder",
+        "definition"
+      ]
+    },
+    "dialectStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mysql": {
+          "$ref": "#/$defs/sqlString"
+        },
+        "sqlsrv": {
+          "$ref": "#/$defs/sqlString"
+        },
+        "sql": {
+          "$ref": "#/$defs/sqlString"
+        },
+        "default": {
+          "$ref": "#/$defs/sqlString"
+        }
+      },
+      "minProperties": 1
+    },
+    "definition": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/createTableDefinition"
+        },
+        {
+          "$ref": "#/$defs/rawDefinition"
+        }
+      ]
+    },
+    "rawDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "raw"
+        },
+        "mysql": {
+          "$ref": "#/$defs/sqlString"
+        },
+        "sqlsrv": {
+          "$ref": "#/$defs/sqlString"
+        },
+        "sql": {
+          "$ref": "#/$defs/sqlString"
+        },
+        "default": {
+          "$ref": "#/$defs/sqlString"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "minProperties": 2
+    },
+    "createTableDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "create_table"
+        },
+        "table": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ifNotExists": {
+          "type": "boolean"
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/column"
+          }
+        },
+        "primaryKey": {
+          "$ref": "#/$defs/columnList"
+        },
+        "unique": {
+          "$ref": "#/$defs/uniqueList"
+        },
+        "indexes": {
+          "$ref": "#/$defs/indexList"
+        },
+        "foreignKeys": {
+          "$ref": "#/$defs/foreignKeyList"
+        },
+        "checks": {
+          "$ref": "#/$defs/checkList"
+        }
+      },
+      "required": [
+        "type",
+        "table",
+        "columns"
+      ]
+    },
+    "column": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "default": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "onUpdate": {
+          "type": "string"
+        },
+        "unsigned": {
+          "type": "boolean"
+        },
+        "autoIncrement": {
+          "type": "boolean"
+        },
+        "identity": {
+          "type": "boolean"
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "raw": {
+          "$ref": "#/$defs/sqlString"
+        },
+        "mysql": {
+          "$ref": "#/$defs/sqlString"
+        },
+        "sqlsrv": {
+          "$ref": "#/$defs/sqlString"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ]
+    },
+    "columnList": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "uniqueList": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/columnList"
+          },
+          {
+            "$ref": "#/$defs/uniqueDefinition"
+          }
+        ]
+      }
+    },
+    "uniqueDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
+        }
+      },
+      "required": [
+        "columns"
+      ]
+    },
+    "indexList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/indexDefinition"
+      }
+    },
+    "indexDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
+        }
+      },
+      "required": [
+        "columns"
+      ]
+    },
+    "foreignKeyList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/foreignKeyDefinition"
+      }
+    },
+    "foreignKeyDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
+        },
+        "refTable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "refColumns": {
+          "$ref": "#/$defs/columnList"
+        },
+        "onDelete": {
+          "$ref": "#/$defs/fkAction"
+        },
+        "onUpdate": {
+          "$ref": "#/$defs/fkAction"
+        }
+      },
+      "required": [
+        "columns",
+        "refTable",
+        "refColumns"
+      ]
+    },
+    "checkList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/checkDefinition"
+      }
+    },
+    "checkDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expression": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "expression"
+      ]
+    },
+    "fkAction": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sqlString": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
