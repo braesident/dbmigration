@@ -7,9 +7,6 @@ namespace Braesident\DbMigration;
 use InvalidArgumentException;
 use stdClass;
 
-/**
- * Minimaler SQL-Builder-Stub für Dialekt-spezifisches SQL.
- */
 final class SqlBuilder
 {
   public static function build(string|array|object $definition, string $dialect): string|array
