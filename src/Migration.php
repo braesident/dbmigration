@@ -28,7 +28,7 @@ class Migration
 
   public function getName(): string
   {
-    return self::class;
+    return static::class;
   }
 
   /**
