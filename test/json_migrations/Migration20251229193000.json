@@ -1,0 +1,44 @@
+{
+  "$schema": "../../src/migration.schema.json",
+  "up": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_table",
+        "table": "test_migration",
+        "schema": "dbo",
+        "ifNotExists": true,
+        "columns": [
+          {
+            "name": "kTest_migration",
+            "type": "bigint",
+            "nullable": false,
+            "autoIncrement": true
+          },
+          {
+            "name": "cName",
+            "type": "string",
+            "length": 255,
+            "nullable": false
+          },
+          {
+            "name": "bActive",
+            "type": "boolean",
+            "nullable": false,
+            "default": 1
+          },
+          {
+            "name": "dCreated",
+            "type": "datetime",
+            "nullable": false,
+            "default": "CURRENT_TIMESTAMP"
+          }
+        ],
+        "primaryKey": [
+          "kTest_migration"
+        ]
+      }
+    }
+  ],
+  "down": []
+}

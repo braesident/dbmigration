@@ -12,6 +12,7 @@
     "php": ">=8.0"
   },
   "require-dev": {
+    "braesident/jpdo": "^1.0",
     "friendsofphp/php-cs-fixer": "^3.90",
     "squizlabs/php_codesniffer": "^4.0"
   },
