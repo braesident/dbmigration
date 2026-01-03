@@ -1,0 +1,164 @@
+{
+  "$schema": "../../src/migration.schema.json",
+  "up": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_view",
+        "view": "view_test_migration_summary",
+        "schema": "dbo",
+        "replace": true,
+        "query": {
+          "select": [
+            {
+              "col": "tm.kTest_migration",
+              "as": "kTest_migration"
+            },
+            {
+              "expr": {
+                "fn": "coalesce",
+                "args": [
+                  "tm.cTitle",
+                  {
+                    "value": ""
+                  }
+                ]
+              },
+              "as": "cTitle"
+            },
+            {
+              "expr": {
+                "fn": "length",
+                "args": [
+                  {
+                    "fn": "coalesce",
+                    "args": [
+                      "tm.cTitle",
+                      {
+                        "value": ""
+                      }
+                    ]
+                  }
+                ]
+              },
+              "as": "nTitle_len"
+            },
+            {
+              "col": "tm.bActive",
+              "as": "bActive"
+            },
+            {
+              "col": "tm.dCreated",
+              "as": "dCreated"
+            },
+            {
+              "expr": {
+                "fn": "date_format",
+                "args": [
+                  "tm.dCreated",
+                  "%Y-%m-%d"
+                ]
+              },
+              "as": "dCreated_iso"
+            },
+            {
+              "expr": {
+                "fn": "ifnull",
+                "args": [
+                  "tmc.cName",
+                  {
+                    "value": ""
+                  }
+                ]
+              },
+              "as": "cCategory"
+            }
+          ],
+          "from": {
+            "table": "test_migration_log",
+            "as": "tm"
+          },
+          "left_join": [
+            {
+              "table": "test_migration_category",
+              "as": "tmc",
+              "on": [
+                "tmc.kTest_migration_category",
+                "=",
+                "tm.kTest_migration_category"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_view",
+        "view": "view_test_migration_active",
+        "schema": "dbo",
+        "replace": true,
+        "query": {
+          "select": [
+            {
+              "col": "tm.kTest_migration",
+              "as": "kTest_migration"
+            },
+            {
+              "expr": {
+                "fn": "coalesce",
+                "args": [
+                  "tm.cTitle",
+                  {
+                    "value": ""
+                  }
+                ]
+              },
+              "as": "cTitle"
+            },
+            {
+              "expr": {
+                "fn": "date_format",
+                "args": [
+                  "tm.dCreated",
+                  "%Y-%m-%d"
+                ]
+              },
+              "as": "dCreated_iso"
+            }
+          ],
+          "from": {
+            "table": "test_migration_log",
+            "as": "tm"
+          },
+          "where": [
+            "tm.bActive",
+            "=",
+            1
+          ]
+        }
+      }
+    }
+  ],
+  "down": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_view",
+        "view": "view_test_migration_active",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_view",
+        "view": "view_test_migration_summary",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    }
+  ]
+}
