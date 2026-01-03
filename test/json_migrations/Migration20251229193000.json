@@ -40,5 +40,15 @@
       }
     }
   ],
-  "down": []
+  "down": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_table",
+        "table": "test_migration",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    }
+  ]
 }
