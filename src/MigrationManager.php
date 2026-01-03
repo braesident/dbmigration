@@ -211,6 +211,8 @@ final class MigrationManager
       $identifier = max(array_merge($executedMigrations, array_keys($migrations)));
     }
 
+    $identifier = $this->resolveMigrationIdentifier($identifier, $migrations, $executedMigrations, $currentId);
+
     $direction = $identifier > $currentId ? IMigration::UP : IMigration::DOWN;
 
     try {
@@ -252,6 +254,61 @@ final class MigrationManager
     }
 
     return $executed;
+  }
+
+  private function resolveMigrationIdentifier(mixed $identifier, array $migrations, array $executedMigrations, int $currentId): int
+  {
+    if (null === $identifier) {
+      return $currentId;
+    }
+
+    if (\is_string($identifier)) {
+      $trimmed = trim($identifier);
+      if (preg_match('/^([+-])(\d+)$/', $trimmed, $matches)) {
+        return $this->resolveRelativeMigrationId($matches[1], (int) $matches[2], $migrations, $executedMigrations, $currentId);
+      }
+    }
+
+    if (\is_numeric($identifier)) {
+      return (int) $identifier;
+    }
+
+    throw new InvalidArgumentException('Ungültiger Migration-Identifikator.');
+  }
+
+  private function resolveRelativeMigrationId(string $sign, int $offset, array $migrations, array $executedMigrations, int $currentId): int
+  {
+    if ($offset <= 0) {
+      return $currentId;
+    }
+
+    if ('+' === $sign) {
+      $ids = array_map('intval', array_keys($migrations));
+      sort($ids, \SORT_NUMERIC);
+      $future = array_values(array_filter($ids, static fn ($id) => $id > $currentId));
+      if ([] === $future) {
+        return $currentId;
+      }
+      $index = $offset - 1;
+      if ($index >= \count($future)) {
+        return $future[\count($future) - 1];
+      }
+
+      return $future[$index];
+    }
+
+    $ids = array_map('intval', $executedMigrations);
+    sort($ids, \SORT_NUMERIC);
+    $past = array_values(array_filter($ids, static fn ($id) => $id < $currentId));
+    if ([] === $past) {
+      return 0;
+    }
+    $index = \count($past) - $offset;
+    if ($index < 0) {
+      return 0;
+    }
+
+    return $past[$index];
   }
 
   public function setMigrations(array $migrations): self
