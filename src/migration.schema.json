@@ -81,6 +81,12 @@
           "$ref": "#/$defs/createTableDefinition"
         },
         {
+          "$ref": "#/$defs/dropTableDefinition"
+        },
+        {
+          "$ref": "#/$defs/alterTableDefinition"
+        },
+        {
           "$ref": "#/$defs/rawDefinition"
         }
       ]
@@ -155,6 +161,462 @@
         "type",
         "table",
         "columns"
+      ]
+    },
+    "dropTableDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "drop_table"
+        },
+        "table": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ifExists": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "table"
+      ]
+    },
+    "alterTableDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "alter_table"
+        },
+        "table": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actions": {
+          "$ref": "#/$defs/alterActions"
+        }
+      },
+      "required": [
+        "type",
+        "table",
+        "actions"
+      ]
+    },
+    "alterActions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/alterAction"
+      }
+    },
+    "alterAction": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/addColumnAction"
+        },
+        {
+          "$ref": "#/$defs/modifyColumnAction"
+        },
+        {
+          "$ref": "#/$defs/dropColumnAction"
+        },
+        {
+          "$ref": "#/$defs/renameColumnAction"
+        },
+        {
+          "$ref": "#/$defs/renameTableAction"
+        },
+        {
+          "$ref": "#/$defs/addIndexAction"
+        },
+        {
+          "$ref": "#/$defs/dropIndexAction"
+        },
+        {
+          "$ref": "#/$defs/addUniqueAction"
+        },
+        {
+          "$ref": "#/$defs/dropUniqueAction"
+        },
+        {
+          "$ref": "#/$defs/addCheckAction"
+        },
+        {
+          "$ref": "#/$defs/dropCheckAction"
+        },
+        {
+          "$ref": "#/$defs/addPrimaryKeyAction"
+        },
+        {
+          "$ref": "#/$defs/dropPrimaryKeyAction"
+        },
+        {
+          "$ref": "#/$defs/addForeignKeyAction"
+        },
+        {
+          "$ref": "#/$defs/dropForeignKeyAction"
+        }
+      ]
+    },
+    "addColumnAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "add_column"
+        },
+        "column": {
+          "$ref": "#/$defs/column"
+        },
+        "after": {
+          "type": "string",
+          "minLength": 1
+        },
+        "first": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action",
+        "column"
+      ]
+    },
+    "modifyColumnAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "modify_column"
+        },
+        "column": {
+          "$ref": "#/$defs/column"
+        },
+        "after": {
+          "type": "string",
+          "minLength": 1
+        },
+        "first": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action",
+        "column"
+      ]
+    },
+    "dropColumnAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "drop_column"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "action",
+        "name"
+      ]
+    },
+    "renameColumnAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "rename_column"
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "column": {
+          "$ref": "#/$defs/column"
+        }
+      },
+      "required": [
+        "action",
+        "from",
+        "to"
+      ]
+    },
+    "renameTableAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "rename_table"
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "action",
+        "to"
+      ]
+    },
+    "addIndexAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "add_index"
+        },
+        "index": {
+          "$ref": "#/$defs/indexDefinition"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "index"
+          ]
+        },
+        {
+          "required": [
+            "columns"
+          ]
+        }
+      ]
+    },
+    "dropIndexAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "drop_index"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "action",
+        "name"
+      ]
+    },
+    "addUniqueAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "add_unique"
+        },
+        "unique": {
+          "$ref": "#/$defs/uniqueDefinition"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "unique"
+          ]
+        },
+        {
+          "required": [
+            "columns"
+          ]
+        }
+      ]
+    },
+    "dropUniqueAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "drop_unique"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "action",
+        "name"
+      ]
+    },
+    "addCheckAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "add_check"
+        },
+        "check": {
+          "$ref": "#/$defs/checkDefinition"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expression": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "check"
+          ]
+        },
+        {
+          "required": [
+            "expression"
+          ]
+        }
+      ]
+    },
+    "dropCheckAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "drop_check"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "action",
+        "name"
+      ]
+    },
+    "addPrimaryKeyAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "add_primary_key"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
+        }
+      },
+      "required": [
+        "action",
+        "columns"
+      ]
+    },
+    "dropPrimaryKeyAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "drop_primary_key"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "action"
+      ]
+    },
+    "addForeignKeyAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "add_foreign_key"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
+        },
+        "refTable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "refColumns": {
+          "$ref": "#/$defs/columnList"
+        },
+        "onDelete": {
+          "type": "string"
+        },
+        "onUpdate": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "columns",
+        "refTable",
+        "refColumns"
+      ]
+    },
+    "dropForeignKeyAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "drop_foreign_key"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "action",
+        "name"
       ]
     },
     "column": {
