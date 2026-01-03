@@ -652,11 +652,13 @@ final class SelectBuilder
       throw new InvalidArgumentException('from benötigt table.');
     }
 
+    $tableRef = $this->quoteIdentifierPath($table);
+
     if (\is_string($alias) && '' !== $alias) {
-      return $table.' AS '.$this->quoteIdentifier($alias);
+      return $tableRef.' AS '.$this->quoteIdentifier($alias);
     }
 
-    return $table;
+    return $tableRef;
   }
 
   private function renderJoin(array $join): string
@@ -669,7 +671,7 @@ final class SelectBuilder
     if (null !== $query) {
       $source = $this->renderSubquery($query);
     } elseif (\is_string($table) && '' !== $table) {
-      $source = $table;
+      $source = $this->quoteIdentifierPath($table);
     } else {
       throw new InvalidArgumentException('join benötigt table oder query.');
     }
@@ -1315,6 +1317,42 @@ final class SelectBuilder
     $escaped = str_replace("'", "''", (string) $value);
 
     return "'".$escaped."'";
+  }
+
+  private function quoteIdentifierPath(string $name): string
+  {
+    $name = trim($name);
+    if ('' === $name) {
+      return $name;
+    }
+
+    if ($this->isRawIdentifier($name)) {
+      return $name;
+    }
+
+    $parts = explode('.', $name);
+    $quoted = [];
+    foreach ($parts as $part) {
+      if ('' === $part) {
+        return $name;
+      }
+      if ('*' === $part) {
+        $quoted[] = $part;
+        continue;
+      }
+      $quoted[] = $this->quoteIdentifier($part);
+    }
+
+    return implode('.', $quoted);
+  }
+
+  private function isRawIdentifier(string $name): bool
+  {
+    if (preg_match('/\\s|[()]/', $name)) {
+      return true;
+    }
+
+    return false !== strpbrk($name, '`[]\"');
   }
 
   private function quoteIdentifier(string $name): string
