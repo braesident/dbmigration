@@ -65,4 +65,5 @@ try {
   $mm->migrate($target);
 } catch (Throwable $th) {
   echo $th->getMessage();
+  echo $th->getTraceAsString();
 }
