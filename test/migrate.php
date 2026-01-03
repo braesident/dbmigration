@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-// Terminal: php -f migrate.php type=mysql format=php
-
 use Braesident\DbMigration\MigrationManager;
 use Braesident\JPdo\JPdo;
 
