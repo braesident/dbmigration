@@ -41,13 +41,6 @@ try {
     case 'mysql':
 
       $db = JPdo::mysql('localhost', 'migration_test', 'user', 'pw123');
-      if ('php' === $format) {
-        $mm = new MigrationManager($db, __DIR__.'/php_migrations', 'test\\php');
-      } elseif ('json' === $format) {
-        $mm = new MigrationManager($db, __DIR__.'/json_migrations', 'test\\json');
-      } elseif ('mix' === $format) {
-        $mm = new MigrationManager($db, __DIR__.'/json_migrations', 'test\\json');
-      }
 
       break;
 
@@ -62,6 +55,14 @@ try {
       $mm = new MigrationManager($db);
 
       break;
+  }
+
+  if ('php' === $format) {
+    $mm = new MigrationManager($db, __DIR__.'/php_migrations', 'test\\php');
+  } elseif ('json' === $format) {
+    $mm = new MigrationManager($db, __DIR__.'/json_migrations', 'test\\json');
+  } elseif ('mix' === $format) {
+    $mm = new MigrationManager($db, __DIR__.'/mix_migrations', 'test\\mix');
   }
 
   $mm->migrate($target);
