@@ -22,6 +22,8 @@ final class SqlBuilder
     return match ($type) {
       'create_table' => self::buildCreateTable($normalized, $dialect),
       'drop_table'   => self::buildDropTable($normalized, $dialect),
+      'create_view'  => self::buildCreateView($normalized, $dialect, $context),
+      'drop_view'    => self::buildDropView($normalized, $dialect),
       'alter_table'  => self::buildAlterTable($normalized, $dialect, $context),
       'raw'          => self::buildRaw($normalized, $dialect),
       default        => throw new InvalidArgumentException('SQL-Builder kennt den Typ nicht: '.$type)
@@ -225,6 +227,71 @@ final class SqlBuilder
       $sql .= ' IF EXISTS';
     }
     $sql .= ' `'.$table.'`';
+
+    return $sql;
+  }
+
+  private static function buildCreateView(array $definition, string $dialect, array $context): string|array
+  {
+    $view = (string) ($definition['view'] ?? $definition['name'] ?? '');
+    if ('' === $view) {
+      throw new InvalidArgumentException('create_view benötigt "view".');
+    }
+
+    $schema  = (string) ($definition['schema'] ?? 'dbo');
+    $replace = \array_key_exists('replace', $definition) ? (bool) $definition['replace'] : true;
+    $select  = $definition['select'] ?? $definition['query'] ?? null;
+    if (null === $select) {
+      throw new InvalidArgumentException('create_view benötigt "select" oder "query".');
+    }
+    $selectSql = SelectBuilder::build($select, $context);
+
+    if ('sqlsrv' === $dialect) {
+      $viewRef = '['.$schema.'].['.$view.']';
+      if ($replace) {
+        $sql   = [];
+        $sql[] = "IF OBJECT_ID(N'".$viewRef."', N'V') IS NULL EXEC('CREATE VIEW ".$viewRef." AS SELECT 1 AS dummy')";
+        $sql[] = 'ALTER VIEW '.$viewRef.' AS '.$selectSql;
+
+        return $sql;
+      }
+
+      return 'CREATE VIEW '.$viewRef.' AS '.$selectSql;
+    }
+
+    $sql = 'CREATE ';
+    if ($replace) {
+      $sql .= 'OR REPLACE ';
+    }
+    $sql .= 'VIEW `'.$view.'` AS '.$selectSql;
+
+    return $sql;
+  }
+
+  private static function buildDropView(array $definition, string $dialect): string
+  {
+    $view = (string) ($definition['view'] ?? $definition['name'] ?? '');
+    if ('' === $view) {
+      throw new InvalidArgumentException('drop_view benötigt "view".');
+    }
+
+    $schema   = (string) ($definition['schema'] ?? 'dbo');
+    $ifExists = \array_key_exists('ifExists', $definition) ? (bool) $definition['ifExists'] : true;
+
+    if ('sqlsrv' === $dialect) {
+      $viewRef = '['.$schema.'].['.$view.']';
+      if ($ifExists) {
+        return "IF OBJECT_ID(N'".$viewRef."', N'V') IS NOT NULL DROP VIEW ".$viewRef;
+      }
+
+      return 'DROP VIEW '.$viewRef;
+    }
+
+    $sql = 'DROP VIEW';
+    if ($ifExists) {
+      $sql .= ' IF EXISTS';
+    }
+    $sql .= ' `'.$view.'`';
 
     return $sql;
   }
@@ -858,4 +925,5 @@ final class SqlBuilder
 
     return $versionId >= 80016;
   }
+
 }
