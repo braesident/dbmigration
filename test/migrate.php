@@ -52,7 +52,6 @@ try {
       }
 
       $db = JPdo::sqlsrv('ip,port\\instance', 'migration_test', 'user', $_GET['p']);
-      $mm = new MigrationManager($db);
 
       break;
   }
