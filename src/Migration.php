@@ -11,6 +11,7 @@ use PDO;
 class Migration
 {
   private $description;
+  private ?array $dialectContext = null;
 
   public function __construct(private PDO $pdo, private ?DateTimeImmutable $executed = null)
   {
@@ -92,7 +93,7 @@ class Migration
       }
       $definition = $normalized['definition'] ?? $normalized;
 
-      return SqlBuilder::build($definition, $this->getDialect());
+      return SqlBuilder::build($definition, $this->getDialectContext());
     }
 
     if ($this->isList($query)) {
@@ -134,6 +135,50 @@ class Migration
     }
 
     return 'mysql';
+  }
+
+  private function getDialectContext(): array
+  {
+    if (null !== $this->dialectContext) {
+      return $this->dialectContext;
+    }
+
+    $dialect = $this->getDialect();
+    $context = ['dialect' => $dialect];
+
+    if ('mysql' === $dialect) {
+      $context = array_merge($context, $this->getMySqlVersionInfo());
+    }
+
+    return $this->dialectContext = $context;
+  }
+
+  private function getMySqlVersionInfo(): array
+  {
+    $version = '';
+    if ($this->pdo instanceof PDO) {
+      $attr = $this->pdo->getAttribute(PDO::ATTR_SERVER_VERSION);
+      if (\is_string($attr)) {
+        $version = $attr;
+      }
+    }
+    if ('' === $version) {
+      return [];
+    }
+
+    $isMaria  = false !== stripos($version, 'mariadb');
+    $clean    = $isMaria ? preg_replace('/-.*$/', '', $version) : preg_replace('/[^0-9.].*$/', '', $version);
+    $parts    = explode('.', (string) $clean);
+    $major    = (int) ($parts[0] ?? 0);
+    $minor    = (int) ($parts[1] ?? 0);
+    $patch    = (int) ($parts[2] ?? 0);
+    $versionId = ($major * 10000) + ($minor * 100) + $patch;
+
+    return [
+      'serverProduct'  => $isMaria ? 'mariadb' : 'mysql',
+      'serverVersion'  => $version,
+      'serverVersionId' => $versionId
+    ];
   }
 
   private function isList(array $value): bool

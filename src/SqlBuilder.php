@@ -9,8 +9,10 @@ use stdClass;
 
 final class SqlBuilder
 {
-  public static function build(string|array|object $definition, string $dialect): string|array
+  public static function build(string|array|object $definition, string|array $dialect): string|array
   {
+    $context    = self::normalizeDialectContext($dialect);
+    $dialect    = $context['dialect'];
     $normalized = self::normalizeDefinition($definition);
     $type       = mb_strtolower((string) ($normalized['type'] ?? ''));
     if ('' === $type && self::hasDialectSql($normalized)) {
@@ -19,6 +21,8 @@ final class SqlBuilder
 
     return match ($type) {
       'create_table' => self::buildCreateTable($normalized, $dialect),
+      'drop_table'   => self::buildDropTable($normalized, $dialect),
+      'alter_table'  => self::buildAlterTable($normalized, $dialect, $context),
       'raw'          => self::buildRaw($normalized, $dialect),
       default        => throw new InvalidArgumentException('SQL-Builder kennt den Typ nicht: '.$type)
     };
@@ -195,6 +199,348 @@ final class SqlBuilder
     $sql .= \PHP_EOL.') ENGINE = InnoDB';
 
     return $sql;
+  }
+
+  private static function buildDropTable(array $definition, string $dialect): string
+  {
+    $table = (string) ($definition['table'] ?? '');
+    if ('' === $table) {
+      throw new InvalidArgumentException('drop_table benötigt "table".');
+    }
+
+    $schema   = (string) ($definition['schema'] ?? 'dbo');
+    $ifExists = \array_key_exists('ifExists', $definition) ? (bool) $definition['ifExists'] : true;
+
+    if ('sqlsrv' === $dialect) {
+      $tableRef = '['.$schema.'].['.$table.']';
+      if ($ifExists) {
+        return "IF OBJECT_ID(N'".$tableRef."', N'U') IS NOT NULL DROP TABLE ".$tableRef;
+      }
+
+      return 'DROP TABLE '.$tableRef;
+    }
+
+    $sql = 'DROP TABLE';
+    if ($ifExists) {
+      $sql .= ' IF EXISTS';
+    }
+    $sql .= ' `'.$table.'`';
+
+    return $sql;
+  }
+
+  private static function buildAlterTable(array $definition, string $dialect, array $context): string|array
+  {
+    $table = (string) ($definition['table'] ?? '');
+    if ('' === $table) {
+      throw new InvalidArgumentException('alter_table benötigt "table".');
+    }
+
+    $schema  = (string) ($definition['schema'] ?? 'dbo');
+    $actions = $definition['actions'] ?? $definition['action'] ?? null;
+    if (null === $actions) {
+      throw new InvalidArgumentException('alter_table benötigt "actions".');
+    }
+    if ( ! \is_array($actions)) {
+      throw new InvalidArgumentException('alter_table "actions" muss array sein.');
+    }
+    if ( ! self::isList($actions)) {
+      $actions = [$actions];
+    }
+
+    $tableRef   = 'sqlsrv' === $dialect ? '['.$schema.'].['.$table.']' : '`'.$table.'`';
+    $statements = [];
+
+    foreach ($actions as $action) {
+      if ( ! \is_array($action)) {
+        throw new InvalidArgumentException('alter_table Action muss array sein.');
+      }
+      $actionType = mb_strtolower((string) ($action['action'] ?? $action['type'] ?? ''));
+      if ('' === $actionType) {
+        throw new InvalidArgumentException('alter_table Action benötigt "action".');
+      }
+
+      switch ($actionType) {
+        case 'add_column':
+          $column = $action['column'] ?? null;
+          if (null === $column) {
+            $column = $action;
+            unset($column['action'], $column['type'], $column['after'], $column['first']);
+          }
+          if ( ! \is_array($column)) {
+            throw new InvalidArgumentException('add_column benötigt "column".');
+          }
+
+          $extraChecks = [];
+          $columnSql   = self::buildColumn($column, $dialect, $table, $extraChecks);
+          $sql         = 'ALTER TABLE '.$tableRef.' ADD '.$columnSql;
+
+          if ('mysql' === $dialect) {
+            $after = $action['after'] ?? null;
+            $first = (bool) ($action['first'] ?? false);
+            if ($first) {
+              $sql .= ' FIRST';
+            } elseif (\is_string($after) && '' !== $after) {
+              $sql .= ' AFTER `'.$after.'`';
+            }
+          }
+          $statements[] = $sql;
+
+          foreach ($extraChecks as $checkSql) {
+            $statements[] = 'ALTER TABLE '.$tableRef.' ADD '.$checkSql;
+          }
+          break;
+
+        case 'modify_column':
+          $column = $action['column'] ?? null;
+          if (null === $column) {
+            $column = $action;
+            unset($column['action'], $column['type'], $column['after'], $column['first']);
+          }
+          if ( ! \is_array($column)) {
+            throw new InvalidArgumentException('modify_column benötigt "column".');
+          }
+
+          $extraChecks = [];
+          if ('sqlsrv' === $dialect) {
+            if (\array_key_exists('default', $column) || \array_key_exists('onUpdate', $column) || ! empty($column['autoIncrement']) || ! empty($column['identity'])) {
+              throw new InvalidArgumentException('sqlsrv modify_column unterstützt kein default/onUpdate/identity.');
+            }
+            $name = (string) ($column['name'] ?? '');
+            if ('' === $name) {
+              throw new InvalidArgumentException('Spalte benötigt "name".');
+            }
+            $type      = $column['type'] ?? 'string';
+            $length    = $column['length'] ?? null;
+            $precision = $column['precision'] ?? null;
+            $scale     = $column['scale'] ?? null;
+            $unsigned  = (bool) ($column['unsigned'] ?? false);
+            $enum      = $column['enum'] ?? null;
+            $raw       = $column[$dialect] ?? $column['raw'] ?? null;
+            $nullable  = \array_key_exists('nullable', $column) ? (bool) $column['nullable'] : true;
+
+            $sqlType   = $raw ? (string) $raw : self::mapType($type, $dialect, $length, $precision, $scale, $unsigned, $enum, $table, $name, $extraChecks);
+            $columnSql = self::quoteColumn($name, $dialect).' '.$sqlType.' '.($nullable ? 'NULL' : 'NOT NULL');
+            $statements[] = 'ALTER TABLE '.$tableRef.' ALTER COLUMN '.$columnSql;
+
+            foreach ($extraChecks as $checkSql) {
+              $statements[] = 'ALTER TABLE '.$tableRef.' ADD '.$checkSql;
+            }
+          } else {
+            $columnSql = self::buildColumn($column, $dialect, $table, $extraChecks);
+            $sql       = 'ALTER TABLE '.$tableRef.' MODIFY COLUMN '.$columnSql;
+
+            $after = $action['after'] ?? null;
+            $first = (bool) ($action['first'] ?? false);
+            if ($first) {
+              $sql .= ' FIRST';
+            } elseif (\is_string($after) && '' !== $after) {
+              $sql .= ' AFTER `'.$after.'`';
+            }
+            $statements[] = $sql;
+          }
+          break;
+
+        case 'drop_column':
+          $name = (string) ($action['name'] ?? '');
+          if ('' === $name) {
+            throw new InvalidArgumentException('drop_column benötigt "name".');
+          }
+          $statements[] = 'ALTER TABLE '.$tableRef.' DROP COLUMN '.self::quoteColumn($name, $dialect);
+          break;
+
+        case 'rename_column':
+          $from = (string) ($action['from'] ?? $action['old'] ?? '');
+          $to   = (string) ($action['to'] ?? $action['new'] ?? '');
+          if ('' === $from || '' === $to) {
+            throw new InvalidArgumentException('rename_column benötigt "from" und "to".');
+          }
+          if ('sqlsrv' === $dialect) {
+            $statements[] = "EXEC sp_rename '".$schema.'.'.$table.'.'.$from."', '".$to."', 'COLUMN'";
+          } else {
+            $column = $action['column'] ?? null;
+            if (null === $column) {
+              $column = $action;
+              unset($column['action'], $column['type'], $column['from'], $column['to'], $column['old'], $column['new']);
+            }
+            if ( ! \is_array($column)) {
+              throw new InvalidArgumentException('rename_column benötigt Spaltendefinition für mysql.');
+            }
+            if ( ! isset($column['name']) || '' === (string) $column['name']) {
+              $column['name'] = $to;
+            }
+
+            $extraChecks = [];
+            $columnSql   = self::buildColumn($column, $dialect, $table, $extraChecks);
+            $statements[] = 'ALTER TABLE '.$tableRef.' CHANGE COLUMN '.self::quoteColumn($from, $dialect).' '.$columnSql;
+
+            foreach ($extraChecks as $checkSql) {
+              $statements[] = 'ALTER TABLE '.$tableRef.' ADD '.$checkSql;
+            }
+          }
+          break;
+
+        case 'rename_table':
+          $newName = (string) ($action['to'] ?? $action['new'] ?? $action['name'] ?? '');
+          $oldName = (string) ($action['from'] ?? $table);
+          if ('' === $newName || '' === $oldName) {
+            throw new InvalidArgumentException('rename_table benötigt "to".');
+          }
+          if ('sqlsrv' === $dialect) {
+            $statements[] = "EXEC sp_rename '".$schema.'.'.$oldName."', '".$newName."'";
+          } else {
+            $statements[] = 'RENAME TABLE `'.$oldName.'` TO `'.$newName.'`';
+          }
+          $table    = $newName;
+          $tableRef = 'sqlsrv' === $dialect ? '['.$schema.'].['.$table.']' : '`'.$table.'`';
+          break;
+
+        case 'add_index':
+          $indexDef = $action['index'] ?? null;
+          if (null === $indexDef) {
+            $indexDef = $action;
+            unset($indexDef['action'], $indexDef['type']);
+          }
+          if ( ! \is_array($indexDef)) {
+            throw new InvalidArgumentException('add_index benötigt Definition.');
+          }
+          if ('sqlsrv' === $dialect) {
+            $columns = $indexDef['columns'] ?? $indexDef;
+            if ( ! \is_array($columns) || [] === $columns) {
+              throw new InvalidArgumentException('add_index benötigt "columns".');
+            }
+            $colsSql   = self::quoteColumnList($columns, $dialect);
+            $indexName = $indexDef['name'] ?? ('idx_'.md5($colsSql));
+            $statements[] = 'CREATE INDEX ['.$indexName.'] ON '.$tableRef.' ('.$colsSql.')';
+          } else {
+            $statements[] = 'ALTER TABLE '.$tableRef.' ADD '.self::buildIndex($indexDef, $dialect);
+          }
+          break;
+
+        case 'drop_index':
+          $name = (string) ($action['name'] ?? '');
+          if ('' === $name) {
+            throw new InvalidArgumentException('drop_index benötigt "name".');
+          }
+          if ('sqlsrv' === $dialect) {
+            $statements[] = 'DROP INDEX ['.$name.'] ON '.$tableRef;
+          } else {
+            $statements[] = 'ALTER TABLE '.$tableRef.' DROP INDEX `'.$name.'`';
+          }
+          break;
+
+        case 'add_unique':
+          $uniqueDef = $action['unique'] ?? null;
+          if (null === $uniqueDef) {
+            $uniqueDef = $action;
+            unset($uniqueDef['action'], $uniqueDef['type']);
+          }
+          if ( ! \is_array($uniqueDef)) {
+            throw new InvalidArgumentException('add_unique benötigt Definition.');
+          }
+          $statements[] = 'ALTER TABLE '.$tableRef.' ADD '.self::buildUnique($uniqueDef, $dialect);
+          break;
+
+        case 'drop_unique':
+          $name = (string) ($action['name'] ?? '');
+          if ('' === $name) {
+            throw new InvalidArgumentException('drop_unique benötigt "name".');
+          }
+          if ('sqlsrv' === $dialect) {
+            $statements[] = 'ALTER TABLE '.$tableRef.' DROP CONSTRAINT ['.$name.']';
+          } else {
+            $statements[] = 'ALTER TABLE '.$tableRef.' DROP INDEX `'.$name.'`';
+          }
+          break;
+
+        case 'add_check':
+          $checkDef = $action['check'] ?? null;
+          if (null === $checkDef) {
+            $checkDef = $action;
+            unset($checkDef['action'], $checkDef['type']);
+          }
+          if ( ! \is_array($checkDef)) {
+            throw new InvalidArgumentException('add_check benötigt Definition.');
+          }
+          $statements[] = 'ALTER TABLE '.$tableRef.' ADD '.self::buildCheck($checkDef, $dialect);
+          break;
+
+        case 'drop_check':
+          $name = (string) ($action['name'] ?? '');
+          if ('' === $name) {
+            throw new InvalidArgumentException('drop_check benötigt "name".');
+          }
+          if ('mysql' === $dialect && ! self::isMySqlCheckSupported($context)) {
+            break;
+          }
+          if ('sqlsrv' === $dialect) {
+            $statements[] = 'ALTER TABLE '.$tableRef.' DROP CONSTRAINT ['.$name.']';
+          } else {
+            $statements[] = 'ALTER TABLE '.$tableRef.' DROP CHECK `'.$name.'`';
+          }
+          break;
+
+        case 'add_primary_key':
+          $columns = $action['columns'] ?? null;
+          if ( ! \is_array($columns) || [] === $columns) {
+            throw new InvalidArgumentException('add_primary_key benötigt "columns".');
+          }
+          $colsSql = self::quoteColumnList($columns, $dialect);
+          $name    = $action['name'] ?? null;
+          if ($name) {
+            $constraint = 'sqlsrv' === $dialect ? '['.$name.']' : '`'.$name.'`';
+            $statements[] = 'ALTER TABLE '.$tableRef.' ADD CONSTRAINT '.$constraint.' PRIMARY KEY ('.$colsSql.')';
+          } else {
+            $statements[] = 'ALTER TABLE '.$tableRef.' ADD PRIMARY KEY ('.$colsSql.')';
+          }
+          break;
+
+        case 'drop_primary_key':
+          $name = $action['name'] ?? null;
+          if ('sqlsrv' === $dialect) {
+            if ( ! \is_string($name) || '' === $name) {
+              throw new InvalidArgumentException('drop_primary_key benötigt "name" für sqlsrv.');
+            }
+            $statements[] = 'ALTER TABLE '.$tableRef.' DROP CONSTRAINT ['.$name.']';
+          } else {
+            $statements[] = 'ALTER TABLE '.$tableRef.' DROP PRIMARY KEY';
+          }
+          break;
+
+        case 'add_foreign_key':
+          $fkDef = $action['foreignKey'] ?? null;
+          if (null === $fkDef) {
+            $fkDef = $action;
+            unset($fkDef['action'], $fkDef['type']);
+          }
+          if ( ! \is_array($fkDef)) {
+            throw new InvalidArgumentException('add_foreign_key benötigt Definition.');
+          }
+          $statements[] = 'ALTER TABLE '.$tableRef.' ADD '.self::buildForeignKey($fkDef, $dialect, $schema);
+          break;
+
+        case 'drop_foreign_key':
+          $name = (string) ($action['name'] ?? '');
+          if ('' === $name) {
+            throw new InvalidArgumentException('drop_foreign_key benötigt "name".');
+          }
+          if ('sqlsrv' === $dialect) {
+            $statements[] = 'ALTER TABLE '.$tableRef.' DROP CONSTRAINT ['.$name.']';
+          } else {
+            $statements[] = 'ALTER TABLE '.$tableRef.' DROP FOREIGN KEY `'.$name.'`';
+          }
+          break;
+
+        default:
+          throw new InvalidArgumentException('alter_table Action unbekannt: '.$actionType);
+      }
+    }
+
+    if (1 === \count($statements)) {
+      return $statements[0];
+    }
+
+    return $statements;
   }
 
   private static function buildColumn(array $column, string $dialect, string $table, array &$extraChecks): string
@@ -464,5 +810,52 @@ final class SqlBuilder
     }
 
     return implode("\n", $out);
+  }
+
+  private static function isList(array $value): bool
+  {
+    if ([] === $value) {
+      return true;
+    }
+    $i = 0;
+    foreach ($value as $key => $_) {
+      if ($key !== $i) {
+        return false;
+      }
+      ++$i;
+    }
+
+    return true;
+  }
+
+  private static function normalizeDialectContext(string|array $dialect): array
+  {
+    if (\is_array($dialect)) {
+      $context       = $dialect;
+      $dialectValue  = $context['dialect'] ?? $context['driver'] ?? $context['name'] ?? null;
+      if ( ! \is_string($dialectValue) || '' === $dialectValue) {
+        throw new InvalidArgumentException('SQL-Dialekt fehlt.');
+      }
+      $context['dialect'] = mb_strtolower($dialectValue);
+
+      return $context;
+    }
+
+    return ['dialect' => mb_strtolower((string) $dialect)];
+  }
+
+  private static function isMySqlCheckSupported(array $context): bool
+  {
+    $product = mb_strtolower((string) ($context['serverProduct'] ?? ''));
+    if ('mariadb' === $product) {
+      return true;
+    }
+
+    $versionId = (int) ($context['serverVersionId'] ?? 0);
+    if (0 === $versionId) {
+      return true;
+    }
+
+    return $versionId >= 80016;
   }
 }
