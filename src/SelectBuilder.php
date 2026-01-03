@@ -147,6 +147,33 @@ final class SelectBuilder
     return $this->addJoin('RIGHT', $table, $as, $on);
   }
 
+  private function addJoin(string $type, mixed $table, ?string $as, mixed $on): self
+  {
+    if ($table instanceof self) {
+      $join = ['query' => $table];
+    } elseif (\is_object($table)) {
+      $table = ($table instanceof stdClass) ? (array) $table : get_object_vars($table);
+      $join  = $table;
+    } elseif (\is_array($table)) {
+      $join = $table;
+    } elseif (\is_string($table)) {
+      $join = ['table' => $table];
+    } else {
+      throw new InvalidArgumentException('join benötigt table oder query.');
+    }
+
+    if (null !== $as && ! isset($join['as']) && ! isset($join['alias'])) {
+      $join['as'] = $as;
+    }
+    if (null !== $on && ! isset($join['on'])) {
+      $join['on'] = $on;
+    }
+
+    $this->joins[] = $this->normalizeJoin($join, $type);
+
+    return $this;
+  }
+
   public function where(mixed $condition): self
   {
     if (null !== $condition) {
