@@ -1,0 +1,68 @@
+{
+  "$schema": "../../src/migration.schema.json",
+  "up": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "alter_table",
+        "table": "test_migration",
+        "schema": "dbo",
+        "actions": [
+          {
+            "action": "add_column",
+            "column": {
+              "name": "kTest_migration_category",
+              "type": "bigint",
+              "unsigned": true,
+              "nullable": true
+            }
+          },
+          {
+            "action": "add_index",
+            "name": "idx_test_migration_category",
+            "columns": [
+              "kTest_migration_category"
+            ]
+          },
+          {
+            "action": "add_foreign_key",
+            "name": "fk_test_migration_category",
+            "columns": [
+              "kTest_migration_category"
+            ],
+            "refTable": "test_migration_category",
+            "refColumns": [
+              "kTest_migration_category"
+            ],
+            "onDelete": "set null",
+            "onUpdate": "no action"
+          }
+        ]
+      }
+    }
+  ],
+  "down": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "alter_table",
+        "table": "test_migration",
+        "schema": "dbo",
+        "actions": [
+          {
+            "action": "drop_foreign_key",
+            "name": "fk_test_migration_category"
+          },
+          {
+            "action": "drop_index",
+            "name": "idx_test_migration_category"
+          },
+          {
+            "action": "drop_column",
+            "name": "kTest_migration_category"
+          }
+        ]
+      }
+    }
+  ]
+}

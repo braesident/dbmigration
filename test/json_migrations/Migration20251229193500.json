@@ -1,0 +1,37 @@
+{
+  "$schema": "../../src/migration.schema.json",
+  "up": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "alter_table",
+        "table": "test_migration",
+        "schema": "dbo",
+        "actions": [
+          {
+            "action": "rename_table",
+            "from": "test_migration",
+            "to": "test_migration_log"
+          }
+        ]
+      }
+    }
+  ],
+  "down": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "alter_table",
+        "table": "test_migration_log",
+        "schema": "dbo",
+        "actions": [
+          {
+            "action": "rename_table",
+            "from": "test_migration_log",
+            "to": "test_migration"
+          }
+        ]
+      }
+    }
+  ]
+}

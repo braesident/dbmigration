@@ -1,0 +1,86 @@
+{
+  "$schema": "../../src/migration.schema.json",
+  "up": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "alter_table",
+        "table": "test_migration",
+        "schema": "dbo",
+        "actions": [
+          {
+            "action": "modify_column",
+            "column": {
+              "name": "cName",
+              "type": "string",
+              "length": 200,
+              "nullable": false
+            }
+          },
+          {
+            "action": "rename_column",
+            "from": "cName",
+            "to": "cTitle",
+            "column": {
+              "name": "cTitle",
+              "type": "string",
+              "length": 200,
+              "nullable": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "alter_table",
+        "table": "test_migration",
+        "schema": "dbo",
+        "actions": [
+          {
+            "action": "add_check",
+            "name": "chk_test_migration_active",
+            "expression": "bActive IN (0,1)"
+          }
+        ]
+      }
+    }
+  ],
+  "down": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "alter_table",
+        "table": "test_migration",
+        "schema": "dbo",
+        "actions": [
+          {
+            "action": "drop_check",
+            "name": "chk_test_migration_active"
+          },
+          {
+            "action": "modify_column",
+            "column": {
+              "name": "cTitle",
+              "type": "string",
+              "length": 255,
+              "nullable": false
+            }
+          },
+          {
+            "action": "rename_column",
+            "from": "cTitle",
+            "to": "cName",
+            "column": {
+              "name": "cName",
+              "type": "string",
+              "length": 255,
+              "nullable": false
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
