@@ -1,6 +1,6 @@
 # DbMigration - Actions Overview
 
-Dieses Composer-Package unterstuetzt Migrationen als PHP-Klassen und JSON-Definitionen.
+Dieses Composer-Package unterstützt Migrationen als PHP-Klassen und JSON-Definitionen.
 Die JSON-Variante nutzt einen Builder (SqlBuilder) und kann Dialekt-SQL für mysql/sqlsrv erzeugen.
 
 ## JSON-Format (Kurzübersicht)
@@ -18,11 +18,13 @@ Die JSON-Variante nutzt einen Builder (SqlBuilder) und kann Dialekt-SQL für mys
 - `alter_table`: Tabelle verändern (Actions, siehe unten)
 - `create_view`: View erzeugen/ersetzen
 - `drop_view`: View löschen
+- `insert`: INSERT (VALUES oder INSERT...SELECT)
+- `update`: UPDATE (SET + WHERE)
 - `raw`: Dialekt-SQL direkt
 
 ## alter_table Actions
 
-- `add_column`: Spalte hinzufügen (optional: `after`, `first` fuer mysql)
+- `add_column`: Spalte hinzufügen (optional: `after`, `first` für mysql)
 - `modify_column`: Spalte ändern (sqlsrv ohne default/onUpdate/identity)
 - `drop_column`: Spalte entfernen
 - `rename_column`: Spalte umbenennen
@@ -39,6 +41,105 @@ Hinweise:
 - Views: `create_view` nutzt in mysql `CREATE OR REPLACE VIEW`. In sqlsrv wird bei `replace=true` zuerst eine Dummy-View erzeugt und dann `ALTER VIEW` genutzt.
 - Views: `select` kann ein String, ein String-Array oder ein Dialekt-Map sein (z.B. `{ "mysql": [...], "sqlsrv": [...] }`).
 - Views: Alternativ kann `query` verwendet werden (JSON-Query-Builder). Dann wird der SELECT aus der Struktur gebaut.
+
+## insert
+
+Unterstützt:
+- `INSERT ... VALUES` (eine oder mehrere Zeilen)
+- `INSERT ... SELECT` (über `select` als SQL oder `query` als AST)
+
+Hinweis (dialekt-neutral):
+- Für AUTO_INCREMENT/IDENTITY-Spalten besser die Spalte weglassen oder `DEFAULT` verwenden (SQL Server akzeptiert `NULL` bei IDENTITY nicht).
+
+VALUES (mehrere Zeilen):
+```json
+{
+  "builder": "sql",
+  "definition": {
+    "type": "insert",
+    "table": "config",
+    "columns": ["cIdentifier", "cDefault", "cValue"],
+    "values": [
+      ["orderid_pad_sign", "0", null],
+      ["orderid_pad_count", "0", null],
+      ["customerid_pad_sign", "0", null],
+      ["customerid_pad_count", "0", null]
+    ]
+  }
+}
+```
+
+INSERT...SELECT (inkl. Subquery):
+```json
+{
+  "builder": "sql",
+  "definition": {
+    "type": "insert",
+    "table": "order_cases",
+    "columns": ["cPrefix", "nId", "cPostfix"],
+    "query": {
+      "select": [
+        { "value": "" },
+        { "query": { "select": "kOrder", "from": "order", "order_by": "kOrder DESC", "limit": 1 } },
+        { "value": "" }
+      ],
+      "where": [
+        { "query": { "select": { "raw": "COUNT(*)" }, "from": "order" } },
+        ">",
+        0
+      ]
+    }
+  }
+}
+```
+
+## update
+
+Unterstützt:
+- `UPDATE ... SET ... WHERE ...` (optional: `limit` / sqlsrv: `TOP`)
+
+SET als Objekt (Spalte => Wert):
+```json
+{
+  "builder": "sql",
+  "definition": {
+    "type": "update",
+    "table": "config",
+    "set": {
+      "cValue": "1"
+    },
+    "where": {
+      "cIdentifier": "orderid_pad_sign"
+    }
+  }
+}
+```
+
+SET mit Ausdruck + Subquery:
+```json
+{
+  "builder": "sql",
+  "definition": {
+    "type": "update",
+    "table": "order_cases",
+    "set": {
+      "nId": {
+        "query": {
+          "select": "kOrder",
+          "from": "order",
+          "order_by": "kOrder DESC",
+          "limit": 1
+        }
+      }
+    },
+    "where": [
+      { "query": { "select": { "raw": "COUNT(*)" }, "from": "order" } },
+      ">",
+      0
+    ]
+  }
+}
+```
 
 ## SelectBuilder (Kurzform)
 
@@ -84,7 +185,7 @@ $sql = $sb->statement();
 
 ### select
 
-Zulaessige Varianten:
+Zulässige Varianten:
 ```json
 "select": "mp.*"
 ```
@@ -108,9 +209,9 @@ Zulaessige Varianten:
 ]
 ```
 
-### expr (Ausdruecke)
+### expr (Ausdrücke)
 
-Zulaessige Formen (als `expr` oder direkt in select/where etc.):
+Zulässige Formen (als `expr` oder direkt in select/where etc.):
 ```json
 "expr": "mp.nStock"
 ```
@@ -139,7 +240,7 @@ Zulaessige Formen (als `expr` oder direkt in select/where etc.):
 "expr": {
   "case": {
     "when": [
-      { "cond": ["o.eStatus", "=", "begun"], "then": { "value": "started" } }
+      { "cond": ["o.eStatus", "=", { "value": "begun" }], "then": { "value": "started" } }
     ],
     "else": { "value": "" }
   }
@@ -188,7 +289,7 @@ Zulaessige Formen (als `expr` oder direkt in select/where etc.):
 ### where / having
 
 ```json
-"where": ["o.eStatus", "=", "begun"]
+"where": ["o.eStatus", "=", { "value": "begun" }]
 ```
 ```json
 "where": {
@@ -244,6 +345,8 @@ Die Testmigrationen zeigen unterschiedliche Actions und Notationen (Objekt/Strin
   - `Migration20251229193400.php`: create_table + add_primary_key
   - `Migration20251229193500.php`: rename_table
   - `Migration20251229193600.php`: create_view (summary/active)
+  - `Migration20251229193700.php`: insert (VALUES + INSERT...SELECT)
+  - `Migration20251229193800.php`: update (SET + WHERE + Subquery)
 
 - `test/json_migrations/`
   - `Migration20251229193000.json`: create_table + drop_table (down)
@@ -253,3 +356,5 @@ Die Testmigrationen zeigen unterschiedliche Actions und Notationen (Objekt/Strin
   - `Migration20251229193400.json`: create_table + add_primary_key
   - `Migration20251229193500.json`: rename_table
   - `Migration20251229193600.json`: create_view (summary/active)
+  - `Migration20251229193700.json`: insert (VALUES + INSERT...SELECT)
+  - `Migration20251229193800.json`: update (SET + WHERE + Subquery)

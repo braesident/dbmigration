@@ -25,6 +25,8 @@ final class SqlBuilder
       'create_view'  => self::buildCreateView($normalized, $dialect, $context),
       'drop_view'    => self::buildDropView($normalized, $dialect),
       'alter_table'  => self::buildAlterTable($normalized, $dialect, $context),
+      'insert'       => self::buildInsert($normalized, $dialect, $context),
+      'update'       => self::buildUpdate($normalized, $dialect, $context),
       'raw'          => self::buildRaw($normalized, $dialect),
       default        => throw new InvalidArgumentException('SQL-Builder kennt den Typ nicht: '.$type)
     };
@@ -608,6 +610,396 @@ final class SqlBuilder
     }
 
     return $statements;
+  }
+
+  private static function buildInsert(array $definition, string $dialect, array $context): string
+  {
+    $table = (string) ($definition['table'] ?? '');
+    if ('' === $table) {
+      throw new InvalidArgumentException('insert benötigt "table".');
+    }
+
+    $schema  = (string) ($definition['schema'] ?? 'dbo');
+    $columns = $definition['columns'] ?? $definition['column'] ?? null;
+    $values  = $definition['values'] ?? $definition['rows'] ?? null;
+    $select  = $definition['select'] ?? $definition['query'] ?? null;
+
+    if (null !== $values && null !== $select) {
+      throw new InvalidArgumentException('insert darf nicht gleichzeitig "values" und "select/query" enthalten.');
+    }
+    if (null === $values && null === $select) {
+      throw new InvalidArgumentException('insert benötigt "values" oder "select/query".');
+    }
+
+    if (null !== $columns && ! \is_array($columns)) {
+      throw new InvalidArgumentException('insert "columns" muss array sein.');
+    }
+    if (null !== $columns && ! self::isList($columns)) {
+      throw new InvalidArgumentException('insert "columns" muss Liste sein.');
+    }
+
+    $tableRef = 'sqlsrv' === $dialect ? '['.$schema.'].['.$table.']' : '`'.$table.'`';
+
+    if (null !== $values) {
+      if ( ! \is_array($values)) {
+        throw new InvalidArgumentException('insert "values" muss array sein.');
+      }
+
+      if ( ! self::isList($values)) {
+        $values = [$values];
+      } elseif ([] !== $values && ! \is_array($values[0]) && ! \is_object($values[0])) {
+        $values = [$values];
+      }
+
+      if ([] === $values) {
+        throw new InvalidArgumentException('insert "values" darf nicht leer sein.');
+      }
+
+      [$columnsSql, $rows] = self::normalizeInsertRows($columns, $values, $context);
+
+      $sql = 'INSERT INTO '.$tableRef;
+      if ('' !== $columnsSql) {
+        $sql .= ' ('.$columnsSql.')';
+      }
+
+      $rowSql = [];
+      foreach ($rows as $row) {
+        $valuesSql = [];
+        foreach ($row as $value) {
+          $valuesSql[] = self::formatDmlValue($value, $dialect, $context);
+        }
+        $rowSql[] = '('.implode(', ', $valuesSql).')';
+      }
+
+      if (1 === \count($rowSql)) {
+        return $sql.' VALUES '.$rowSql[0];
+      }
+
+      return $sql." VALUES\n  ".implode(",\n  ", $rowSql);
+    }
+
+    $sql = 'INSERT INTO '.$tableRef;
+    if (null !== $columns && [] !== $columns) {
+      $sql .= ' ('.self::quoteColumnList($columns, $dialect).')';
+    }
+
+    $selectSql = SelectBuilder::build($select, $context);
+
+    return $sql.' '.$selectSql;
+  }
+
+  private static function normalizeInsertRows(?array $columns, array $values, array $context): array
+  {
+    $dialect = (string) ($context['dialect'] ?? 'mysql');
+    $columnList = $columns ?? [];
+    $rows = [];
+
+    foreach ($values as $idx => $row) {
+      if (\is_object($row)) {
+        $row = self::objectToArray($row);
+      }
+      if ( ! \is_array($row)) {
+        throw new InvalidArgumentException('insert values['.$idx.'] muss array/object sein.');
+      }
+
+      if (self::isList($row)) {
+        if ([] === $columnList) {
+          throw new InvalidArgumentException('insert values als Liste benötigen "columns".');
+        }
+        if (\count($row) !== \count($columnList)) {
+          throw new InvalidArgumentException('insert values['.$idx.'] hat '.\count($row).' Werte, erwartet werden '.\count($columnList).'.');
+        }
+        $rows[] = $row;
+        continue;
+      }
+
+      if ([] === $columnList) {
+        $columnList = array_keys($row);
+      }
+
+      foreach ($columnList as $colName) {
+        if ( ! \array_key_exists((string) $colName, $row)) {
+          throw new InvalidArgumentException('insert values['.$idx.'] fehlt Spalte "'.$colName.'".');
+        }
+      }
+      if (\count($row) !== \count($columnList)) {
+        $extra = array_diff(array_keys($row), $columnList);
+        if ([] !== $extra) {
+          throw new InvalidArgumentException('insert values['.$idx.'] enthält unbekannte Spalten: '.implode(', ', $extra));
+        }
+      }
+
+      $ordered = [];
+      foreach ($columnList as $colName) {
+        $ordered[] = $row[(string) $colName];
+      }
+      $rows[] = $ordered;
+    }
+
+    $columnsSql = [] !== $columnList ? self::quoteColumnList(array_map('strval', $columnList), $dialect) : '';
+
+    return [$columnsSql, $rows];
+  }
+
+  private static function formatDmlValue(mixed $value, string $dialect, array $context): string
+  {
+    if (null === $value) {
+      return 'NULL';
+    }
+    if (\is_bool($value)) {
+      return $value ? '1' : '0';
+    }
+    if (\is_int($value) || \is_float($value)) {
+      return (string) $value;
+    }
+    if (\is_string($value)) {
+      return "'".str_replace("'", "''", $value)."'";
+    }
+
+    if ($value instanceof stdClass) {
+      $value = (array) $value;
+    }
+
+    if (\is_array($value)) {
+      foreach (['value', 'val', 'literal', 'lit'] as $key) {
+        if (\array_key_exists($key, $value)) {
+          return self::formatDmlValue($value[$key], $dialect, $context);
+        }
+      }
+
+      if (isset($value['default']) && true === $value['default']) {
+        return 'DEFAULT';
+      }
+
+      if (isset($value['raw'])) {
+        $raw = trim((string) $value['raw']);
+        if ('' === $raw) {
+          throw new InvalidArgumentException('raw darf nicht leer sein.');
+        }
+
+        return $raw;
+      }
+
+      if (isset($value['query'])) {
+        $sql = SelectBuilder::build($value['query'], $context);
+
+        return '('.$sql.')';
+      }
+
+      $looksLikeQuery = false;
+      foreach (array_keys($value) as $k) {
+        $k = mb_strtolower((string) $k);
+        $k = str_replace(['_', '-'], '', $k);
+        if (\in_array($k, ['select', 'from', 'where', 'groupby', 'orderby', 'join', 'leftjoin', 'rightjoin', 'limit', 'offset', 'distinct', 'union', 'unionall'], true)) {
+          $looksLikeQuery = true;
+          break;
+        }
+      }
+
+      if ($looksLikeQuery) {
+        $sql = SelectBuilder::build($value, $context);
+
+        return '('.$sql.')';
+      }
+
+      $sql = SelectBuilder::expr($value, $context);
+
+      return $sql;
+    }
+
+    throw new InvalidArgumentException('Ungültiger Wert.');
+  }
+
+  private static function buildUpdate(array $definition, string $dialect, array $context): string
+  {
+    $table = (string) ($definition['table'] ?? '');
+    if ('' === $table) {
+      throw new InvalidArgumentException('update benötigt "table".');
+    }
+
+    $schema = (string) ($definition['schema'] ?? 'dbo');
+    $alias  = $definition['as'] ?? $definition['alias'] ?? null;
+    if (null !== $alias && ! \is_string($alias)) {
+      throw new InvalidArgumentException('update "as/alias" muss string sein.');
+    }
+    $alias = \is_string($alias) ? trim($alias) : null;
+    if ('' === $alias) {
+      $alias = null;
+    }
+
+    $set = $definition['set'] ?? null;
+    if (null === $set) {
+      throw new InvalidArgumentException('update benötigt "set".');
+    }
+
+    $assignments = self::normalizeUpdateSet($set);
+    if ([] === $assignments) {
+      throw new InvalidArgumentException('update "set" darf nicht leer sein.');
+    }
+
+    $setParts = [];
+    foreach ($assignments as $assignment) {
+      [$col, $val] = $assignment;
+      $setParts[]  = self::quoteColumn($col, $dialect).' = '.self::formatDmlValue($val, $dialect, $context);
+    }
+
+    $where = $definition['where'] ?? null;
+    if (null !== $where && \is_object($where)) {
+      $where = self::objectToArray($where);
+    }
+
+    $whereSql = null;
+    if (null !== $where) {
+      $whereSql = self::buildUpdateWhere($where, $context);
+    }
+
+    $limit = $definition['limit'] ?? null;
+    $limit = is_numeric($limit) ? (int) $limit : null;
+    if (null !== $limit && $limit < 0) {
+      $limit = null;
+    }
+
+    $tableRef = 'sqlsrv' === $dialect ? '['.$schema.'].['.$table.']' : '`'.$table.'`';
+    $aliasSql = $alias ? self::quoteColumn($alias, $dialect) : null;
+
+    if ('sqlsrv' === $dialect) {
+      $sql = 'UPDATE';
+      if (null !== $limit) {
+        $sql .= ' TOP ('.$limit.')';
+      }
+      $sql .= ' '.($aliasSql ?? $tableRef).' SET '.implode(', ', $setParts);
+      if ($aliasSql) {
+        $sql .= ' FROM '.$tableRef.' AS '.$aliasSql;
+      }
+      if (\is_string($whereSql) && '' !== $whereSql) {
+        $sql .= ' WHERE '.$whereSql;
+      }
+
+      return $sql;
+    }
+
+    $sql = 'UPDATE '.$tableRef;
+    if ($aliasSql) {
+      $sql .= ' AS '.$aliasSql;
+    }
+    $sql .= ' SET '.implode(', ', $setParts);
+    if (\is_string($whereSql) && '' !== $whereSql) {
+      $sql .= ' WHERE '.$whereSql;
+    }
+    if (null !== $limit) {
+      $sql .= ' LIMIT '.$limit;
+    }
+
+    return $sql;
+  }
+
+  private static function normalizeUpdateSet(mixed $set): array
+  {
+    if (\is_object($set)) {
+      $set = self::objectToArray($set);
+    }
+    if ( ! \is_array($set)) {
+      throw new InvalidArgumentException('update "set" muss array/object sein.');
+    }
+
+    $result = [];
+
+    if (self::isList($set)) {
+      foreach ($set as $idx => $item) {
+        if (\is_object($item)) {
+          $item = self::objectToArray($item);
+        }
+
+        if (\is_array($item) && self::isList($item)) {
+          if (\count($item) < 2) {
+            throw new InvalidArgumentException('update set['.$idx.'] benötigt [column, value].');
+          }
+          $col = (string) $item[0];
+          $val = $item[1];
+          if ('' === $col) {
+            throw new InvalidArgumentException('update set['.$idx.'] Spaltenname fehlt.');
+          }
+          $result[] = [$col, $val];
+          continue;
+        }
+
+        if (\is_array($item) && ! self::isList($item)) {
+          $col = (string) ($item['column'] ?? $item['col'] ?? $item['name'] ?? '');
+          if ('' === $col) {
+            throw new InvalidArgumentException('update set['.$idx.'] benötigt "col".');
+          }
+          if (\array_key_exists('value', $item)) {
+            $val = $item['value'];
+          } elseif (\array_key_exists('val', $item)) {
+            $val = $item['val'];
+          } elseif (\array_key_exists('expr', $item)) {
+            $val = $item['expr'];
+          } elseif (\array_key_exists('raw', $item)) {
+            $val = ['raw' => $item['raw']];
+          } else {
+            throw new InvalidArgumentException('update set['.$idx.'] benötigt "value".');
+          }
+
+          $result[] = [$col, $val];
+          continue;
+        }
+
+        throw new InvalidArgumentException('update set['.$idx.'] hat ein ungültiges Format.');
+      }
+
+      return $result;
+    }
+
+    foreach ($set as $col => $val) {
+      $col = (string) $col;
+      if ('' === $col) {
+        throw new InvalidArgumentException('update set enthält leeren Spaltennamen.');
+      }
+      $result[] = [$col, $val];
+    }
+
+    return $result;
+  }
+
+  private static function buildUpdateWhere(mixed $where, array $context): string
+  {
+    if (\is_string($where)) {
+      return trim($where);
+    }
+
+    if (\is_object($where)) {
+      $where = self::objectToArray($where);
+    }
+
+    if (\is_array($where) && ! self::isList($where)) {
+      $normalized = [];
+      foreach ($where as $key => $value) {
+        $normalized[mb_strtolower((string) $key)] = $value;
+      }
+
+      $operatorKeys = ['and', 'or', 'not', 'exists', 'not_exists', 'is_null', 'is_not_null', 'between'];
+      foreach ($operatorKeys as $key) {
+        if (\array_key_exists($key, $normalized)) {
+          return SelectBuilder::condition($where, $context);
+        }
+      }
+
+      $conditions = [];
+      foreach ($where as $col => $val) {
+        if (null === $val) {
+          $conditions[] = ['is_null' => (string) $col];
+          continue;
+        }
+        if (\is_string($val)) {
+          $val = ['value' => $val];
+        }
+        $conditions[] = [(string) $col, '=', $val];
+      }
+
+      return SelectBuilder::condition($conditions, $context);
+    }
+
+    return SelectBuilder::condition($where, $context);
   }
 
   private static function buildColumn(array $column, string $dialect, string $table, array &$extraChecks): string

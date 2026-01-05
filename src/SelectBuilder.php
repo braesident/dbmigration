@@ -43,6 +43,20 @@ final class SelectBuilder
     return self::buildSelectSql($selectOrQuery, $dialect);
   }
 
+  public static function expr(mixed $expr, string|array $dialect): string
+  {
+    $builder = new self($dialect);
+
+    return $builder->renderExpr($expr);
+  }
+
+  public static function condition(mixed $conditions, string|array $dialect, string $glue = 'AND'): string
+  {
+    $builder = new self($dialect);
+
+    return $builder->renderConditionGroup($conditions, $glue);
+  }
+
   public static function fromQuery(mixed $query, string|array $dialect): self
   {
     if ($query instanceof self) {
