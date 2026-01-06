@@ -42,6 +42,11 @@ Hinweise:
 - Views: `select` kann ein String, ein String-Array oder ein Dialekt-Map sein (z.B. `{ "mysql": [...], "sqlsrv": [...] }`).
 - Views: Alternativ kann `query` verwendet werden (JSON-Query-Builder). Dann wird der SELECT aus der Struktur gebaut.
 
+## Datentypen (Hinweise)
+
+- `tinyblob` wird in sqlsrv zu `VARBINARY(255)`.
+- `blob`/`mediumblob`/`longblob` werden in sqlsrv zu `VARBINARY(MAX)` (max. 2 GB; MySQL `LONGBLOB` kann bis 4 GB).
+
 ## insert
 
 Unterstützt:

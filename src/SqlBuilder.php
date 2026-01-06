@@ -1399,8 +1399,17 @@ final class SqlBuilder
     if ('json' === $type) {
       return 'mysql' === $dialect ? 'JSON' : 'NVARCHAR(MAX)';
     }
+    if ('tinyblob' === $type) {
+      return 'mysql' === $dialect ? 'TINYBLOB' : 'VARBINARY(255)';
+    }
     if ('blob' === $type) {
+      return 'mysql' === $dialect ? 'BLOB' : 'VARBINARY(MAX)';
+    }
+    if ('mediumblob' === $type) {
       return 'mysql' === $dialect ? 'MEDIUMBLOB' : 'VARBINARY(MAX)';
+    }
+    if ('longblob' === $type) {
+      return 'mysql' === $dialect ? 'LONGBLOB' : 'VARBINARY(MAX)';
     }
     if ('datetime' === $type) {
       return 'mysql' === $dialect ? 'DATETIME' : 'DATETIME2';
