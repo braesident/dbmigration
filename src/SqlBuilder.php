@@ -122,7 +122,7 @@ final class SqlBuilder
     return $result;
   }
 
-  private static function buildCreateTable(array $definition, string $dialect): string
+  private static function buildCreateTable(array $definition, string $dialect): string|array
   {
     $table = (string) ($definition['table'] ?? '');
     if ('' === $table) {
@@ -140,10 +140,20 @@ final class SqlBuilder
 
     $lines       = [];
     $extraChecks = [];
+    $columnComments = [];
 
     foreach ($columns as $column) {
       if ( ! \is_array($column)) {
         throw new InvalidArgumentException('Spalten müssen Arrays sein.');
+      }
+      if ('sqlsrv' === $dialect && isset($column['comment'])) {
+        $comment = $column['comment'];
+        if (\is_string($comment) && '' !== trim($comment)) {
+          $columnName = (string) ($column['name'] ?? '');
+          if ('' !== $columnName) {
+            $columnComments[$columnName] = $comment;
+          }
+        }
       }
       $lines[] = self::buildColumn($column, $dialect, $table, $extraChecks);
     }
@@ -183,7 +193,17 @@ final class SqlBuilder
         $sql[] = '  );';
         $sql[] = 'END';
 
-        return implode("\n", $sql);
+        $createSql = implode("\n", $sql);
+        if ([] === $columnComments) {
+          return $createSql;
+        }
+
+        $commentSql = [];
+        foreach ($columnComments as $columnName => $comment) {
+          $commentSql[] = self::buildSqlSrvColumnComment($schema, $table, $columnName, $comment);
+        }
+
+        return array_merge([$createSql], $commentSql);
       }
 
       $sql   = [];
@@ -191,7 +211,17 @@ final class SqlBuilder
       $sql[] = self::indentLines($lines, 2);
       $sql[] = ');';
 
-      return implode("\n", $sql);
+      $createSql = implode("\n", $sql);
+      if ([] === $columnComments) {
+        return $createSql;
+      }
+
+      $commentSql = [];
+      foreach ($columnComments as $columnName => $comment) {
+        $commentSql[] = self::buildSqlSrvColumnComment($schema, $table, $columnName, $comment);
+      }
+
+      return array_merge([$createSql], $commentSql);
     }
 
     $sql = 'CREATE TABLE';
@@ -840,7 +870,24 @@ final class SqlBuilder
     $setParts = [];
     foreach ($assignments as $assignment) {
       [$col, $val] = $assignment;
-      $setParts[]  = self::quoteColumn($col, $dialect).' = '.self::formatDmlValue($val, $dialect, $context);
+      if ('sqlsrv' === $dialect && false !== strpos($col, '.')) {
+        $qualifier = trim((string) explode('.', $col, 2)[0]);
+        $target    = $alias ?? $table;
+        if ('' !== $qualifier && $qualifier !== $target) {
+          throw new InvalidArgumentException('sqlsrv update unterstützt nur Spalten der Zieltabelle ('.$target.').');
+        }
+      }
+      $setParts[]  = self::quoteIdentifierPath($col, $dialect).' = '.self::formatDmlValue($val, $dialect, $context);
+    }
+
+    $joins = self::normalizeUpdateJoins($definition, $dialect, $context, $schema);
+    $joinSql = '';
+    if ([] !== $joins) {
+      $parts = [];
+      foreach ($joins as $join) {
+        $parts[] = self::renderUpdateJoin($join, $dialect, $context, $schema);
+      }
+      $joinSql = implode(' ', $parts);
     }
 
     $where = $definition['where'] ?? null;
@@ -859,7 +906,7 @@ final class SqlBuilder
       $limit = null;
     }
 
-    $tableRef = 'sqlsrv' === $dialect ? '['.$schema.'].['.$table.']' : '`'.$table.'`';
+    $tableRef = 'sqlsrv' === $dialect ? '['.$schema.'].['.$table.']' : self::quoteIdentifierPath($table, $dialect);
     $aliasSql = $alias ? self::quoteColumn($alias, $dialect) : null;
 
     if ('sqlsrv' === $dialect) {
@@ -868,8 +915,14 @@ final class SqlBuilder
         $sql .= ' TOP ('.$limit.')';
       }
       $sql .= ' '.($aliasSql ?? $tableRef).' SET '.implode(', ', $setParts);
-      if ($aliasSql) {
-        $sql .= ' FROM '.$tableRef.' AS '.$aliasSql;
+      if ($aliasSql || '' !== $joinSql) {
+        $sql .= ' FROM '.$tableRef;
+        if ($aliasSql) {
+          $sql .= ' AS '.$aliasSql;
+        }
+        if ('' !== $joinSql) {
+          $sql .= ' '.$joinSql;
+        }
       }
       if (\is_string($whereSql) && '' !== $whereSql) {
         $sql .= ' WHERE '.$whereSql;
@@ -881,6 +934,9 @@ final class SqlBuilder
     $sql = 'UPDATE '.$tableRef;
     if ($aliasSql) {
       $sql .= ' AS '.$aliasSql;
+    }
+    if ('' !== $joinSql) {
+      $sql .= ' '.$joinSql;
     }
     $sql .= ' SET '.implode(', ', $setParts);
     if (\is_string($whereSql) && '' !== $whereSql) {
@@ -1002,6 +1058,235 @@ final class SqlBuilder
     return SelectBuilder::condition($where, $context);
   }
 
+  private static function buildSqlSrvColumnComment(string $schema, string $table, string $column, string $comment): string
+  {
+    $schema = trim($schema);
+    if ('' === $schema) {
+      $schema = 'dbo';
+    }
+
+    $table  = trim($table);
+    $column = trim($column);
+    if ('' === $table || '' === $column) {
+      throw new InvalidArgumentException('sqlsrv column comment benötigt table und column.');
+    }
+
+    $tableRef   = '['.$schema.'].['.$table.']';
+    $tableRefLit = str_replace("'", "''", $tableRef);
+    $schemaLit  = str_replace("'", "''", $schema);
+    $tableLit   = str_replace("'", "''", $table);
+    $columnLit  = str_replace("'", "''", $column);
+    $commentLit = str_replace("'", "''", $comment);
+
+    $sql   = [];
+    $sql[] = 'IF EXISTS (';
+    $sql[] = '  SELECT 1';
+    $sql[] = '  FROM sys.extended_properties ep';
+    $sql[] = "  WHERE ep.major_id = OBJECT_ID(N'".$tableRefLit."')";
+    $sql[] = "    AND ep.minor_id = COLUMNPROPERTY(OBJECT_ID(N'".$tableRefLit."'), N'".$columnLit."', 'ColumnId')";
+    $sql[] = "    AND ep.name = N'MS_Description'";
+    $sql[] = ')';
+    $sql[] = "  EXEC sys.sp_updateextendedproperty @name=N'MS_Description', @value=N'".$commentLit."',";
+    $sql[] = "    @level0type=N'SCHEMA', @level0name=N'".$schemaLit."',";
+    $sql[] = "    @level1type=N'TABLE',  @level1name=N'".$tableLit."',";
+    $sql[] = "    @level2type=N'COLUMN', @level2name=N'".$columnLit."'";
+    $sql[] = 'ELSE';
+    $sql[] = "  EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'".$commentLit."',";
+    $sql[] = "    @level0type=N'SCHEMA', @level0name=N'".$schemaLit."',";
+    $sql[] = "    @level1type=N'TABLE',  @level1name=N'".$tableLit."',";
+    $sql[] = "    @level2type=N'COLUMN', @level2name=N'".$columnLit."'";
+
+    return implode("\n", $sql);
+  }
+
+  private static function normalizeUpdateJoins(array $definition, string $dialect, array $context, string $defaultSchema): array
+  {
+    $joins = [];
+
+    foreach (['join', 'inner_join', 'innerJoin'] as $key) {
+      if (isset($definition[$key])) {
+        $joins = array_merge($joins, self::normalizeUpdateJoinList($definition[$key], 'INNER', $dialect, $context, $defaultSchema));
+      }
+    }
+    foreach (['left_join', 'leftJoin'] as $key) {
+      if (isset($definition[$key])) {
+        $joins = array_merge($joins, self::normalizeUpdateJoinList($definition[$key], 'LEFT', $dialect, $context, $defaultSchema));
+      }
+    }
+    foreach (['right_join', 'rightJoin'] as $key) {
+      if (isset($definition[$key])) {
+        $joins = array_merge($joins, self::normalizeUpdateJoinList($definition[$key], 'RIGHT', $dialect, $context, $defaultSchema));
+      }
+    }
+
+    return $joins;
+  }
+
+  private static function normalizeUpdateJoinList(mixed $joins, string $type, string $dialect, array $context, string $defaultSchema): array
+  {
+    if (\is_object($joins)) {
+      $joins = self::objectToArray($joins);
+    }
+
+    if (\is_string($joins)) {
+      return [self::normalizeUpdateJoin($joins, $type, $dialect, $context, $defaultSchema)];
+    }
+
+    if ( ! \is_array($joins)) {
+      throw new InvalidArgumentException('update join muss string, object oder array sein.');
+    }
+
+    if ( ! self::isList($joins)) {
+      return [self::normalizeUpdateJoin($joins, $type, $dialect, $context, $defaultSchema)];
+    }
+
+    $result = [];
+    foreach ($joins as $idx => $join) {
+      $result[] = self::normalizeUpdateJoin($join, $type, $dialect, $context, $defaultSchema, $idx);
+    }
+
+    return $result;
+  }
+
+  private static function normalizeUpdateJoin(
+    mixed $join,
+    string $type,
+    string $dialect,
+    array $context,
+    string $defaultSchema,
+    ?int $idx = null
+  ): array {
+    if (\is_object($join)) {
+      $join = self::objectToArray($join);
+    }
+
+    if (\is_string($join)) {
+      return [
+        'type'  => $type,
+        'table' => $join
+      ];
+    }
+
+    if ( ! \is_array($join)) {
+      throw new InvalidArgumentException('update join'.(null !== $idx ? '['.$idx.']' : '').' hat ein ungültiges Format.');
+    }
+
+    $table = $join['table'] ?? $join['name'] ?? null;
+    $query = $join['query'] ?? null;
+
+    if (null === $table && null === $query) {
+      throw new InvalidArgumentException('update join'.(null !== $idx ? '['.$idx.']' : '').' benötigt "table" oder "query".');
+    }
+
+    $alias = $join['as'] ?? $join['alias'] ?? null;
+    if (null !== $alias && ! \is_string($alias)) {
+      throw new InvalidArgumentException('update join'.(null !== $idx ? '['.$idx.']' : '').' alias muss string sein.');
+    }
+    $alias = \is_string($alias) ? trim($alias) : null;
+    if ('' === $alias) {
+      $alias = null;
+    }
+
+    $schema = $join['schema'] ?? null;
+    if (null !== $schema && ! \is_string($schema)) {
+      throw new InvalidArgumentException('update join'.(null !== $idx ? '['.$idx.']' : '').' schema muss string sein.');
+    }
+    $schema = \is_string($schema) ? trim($schema) : null;
+    if ('' === $schema) {
+      $schema = null;
+    }
+    if (null === $schema && 'sqlsrv' === $dialect) {
+      $schema = $defaultSchema;
+    }
+
+    return [
+      'type'   => $type,
+      'table'  => \is_string($table) ? (string) $table : null,
+      'query'  => $query,
+      'as'     => $alias,
+      'on'     => $join['on'] ?? null,
+      'using'  => $join['using'] ?? null,
+      'schema' => $schema
+    ];
+  }
+
+  private static function renderUpdateJoin(array $join, string $dialect, array $context, string $defaultSchema): string
+  {
+    $type = mb_strtoupper((string) ($join['type'] ?? 'INNER'));
+    $alias = $join['as'] ?? null;
+    $on = $join['on'] ?? null;
+    $using = $join['using'] ?? null;
+
+    $source = null;
+    if (isset($join['query']) && null !== $join['query']) {
+      $source = '('.SelectBuilder::build($join['query'], $context).')';
+    } elseif (isset($join['table']) && \is_string($join['table']) && '' !== $join['table']) {
+      $schema = $join['schema'] ?? null;
+      $schema = \is_string($schema) && '' !== $schema ? $schema : ('sqlsrv' === $dialect ? $defaultSchema : null);
+      if ('sqlsrv' === $dialect && null !== $schema && ! self::isRawIdentifier($join['table']) && false === str_contains($join['table'], '.')) {
+        $source = '['.$schema.'].['.$join['table'].']';
+      } else {
+        $source = self::quoteIdentifierPath($join['table'], $dialect);
+      }
+    } else {
+      throw new InvalidArgumentException('update join benötigt table oder query.');
+    }
+
+    if (\is_string($alias) && '' !== $alias) {
+      $source .= ' AS '.self::quoteColumn($alias, $dialect);
+    }
+
+    $sql = $type.' JOIN '.$source;
+    if (null !== $on) {
+      $sql .= ' ON '.SelectBuilder::condition($on, $context);
+    } elseif (null !== $using) {
+      if ('sqlsrv' === $dialect) {
+        throw new InvalidArgumentException('update join USING wird in sqlsrv nicht unterstützt, nutze ON.');
+      }
+      $cols = \is_array($using) ? $using : [$using];
+      $sql .= ' USING ('.self::quoteColumnList($cols, $dialect).')';
+    }
+
+    return $sql;
+  }
+
+  private static function quoteIdentifierPath(string $name, string $dialect): string
+  {
+    $name = trim($name);
+    if ('' === $name) {
+      return $name;
+    }
+
+    if (self::isRawIdentifier($name)) {
+      return $name;
+    }
+
+    $parts  = explode('.', $name);
+    $quoted = [];
+    foreach ($parts as $part) {
+      $part = trim($part);
+      if ('' === $part) {
+        return $name;
+      }
+      if ('*' === $part) {
+        $quoted[] = $part;
+        continue;
+      }
+      $quoted[] = self::quoteColumn($part, $dialect);
+    }
+
+    return implode('.', $quoted);
+  }
+
+  private static function isRawIdentifier(string $name): bool
+  {
+    if (preg_match('/\\s|[()]/', $name)) {
+      return true;
+    }
+
+    return false !== strpbrk($name, '`[]\"');
+  }
+
   private static function buildColumn(array $column, string $dialect, string $table, array &$extraChecks): string
   {
     $name = (string) ($column['name'] ?? '');
@@ -1016,6 +1301,7 @@ final class SqlBuilder
     $nullable      = \array_key_exists('nullable', $column) ? (bool) $column['nullable'] : true;
     $default       = $column['default'] ?? null;
     $onUpdate      = $column['onUpdate'] ?? null;
+    $comment       = $column['comment'] ?? null;
     $autoIncrement = (bool) ($column['autoIncrement'] ?? $column['identity'] ?? false);
     $unsigned      = (bool) ($column['unsigned'] ?? false);
     $enum          = $column['enum'] ?? null;
@@ -1044,6 +1330,9 @@ final class SqlBuilder
     }
     if ($onUpdate && 'mysql' === $dialect) {
       $parts[] = 'ON UPDATE '.self::formatDefault($onUpdate, $dialect);
+    }
+    if ('mysql' === $dialect && \is_string($comment) && '' !== trim($comment)) {
+      $parts[] = "COMMENT '".str_replace("'", "''", trim($comment))."'";
     }
 
     return implode(' ', array_filter($parts));

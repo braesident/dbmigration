@@ -13,7 +13,7 @@ Die JSON-Variante nutzt einen Builder (SqlBuilder) und kann Dialekt-SQL für mys
 
 ## Builder-Definitionen
 
-- `create_table`: Tabelle erzeugen (Spalten, PK, Unique, Indexe, FKs, Checks)
+- `create_table`: Tabelle erzeugen (Spalten, PK, Unique, Indexe, FKs, Checks; optional `comment` pro Spalte)
 - `drop_table`: Tabelle löschen
 - `alter_table`: Tabelle verändern (Actions, siehe unten)
 - `create_view`: View erzeugen/ersetzen
@@ -97,6 +97,10 @@ INSERT...SELECT (inkl. Subquery):
 
 Unterstützt:
 - `UPDATE ... SET ... WHERE ...` (optional: `limit` / sqlsrv: `TOP`)
+- Join-Updates über `join`/`left_join`/`right_join` (MySQL: `UPDATE ... JOIN ...`, SQL Server: `UPDATE ... FROM ... JOIN ...`)
+
+Hinweis:
+- Strings in `set` sind immer Literale. Für Spalten/Expressions nutze z.B. `{ "col": "o.kOrder" }`, `{ "raw": "o.kOrder" }` oder Expr-Objekte (`op`, `fn`, `case`, ...).
 
 SET als Objekt (Spalte => Wert):
 ```json
@@ -137,6 +141,32 @@ SET mit Ausdruck + Subquery:
       ">",
       0
     ]
+  }
+}
+```
+
+Join-Update:
+```json
+{
+  "builder": "sql",
+  "definition": {
+    "type": "update",
+    "table": "order_cases",
+    "as": "oc",
+    "join": [
+      {
+        "table": "order",
+        "as": "o",
+        "on": ["o.kOrder", "=", "oc.nId"]
+      }
+    ],
+    "set": {
+      "cPrefix": "",
+      "cPostfix": "",
+      "nId": { "col": "o.kOrder" }
+    },
+    "where": ["o.eStatus", "<>", { "value": "deleted" }],
+    "limit": 10
   }
 }
 ```
@@ -347,6 +377,8 @@ Die Testmigrationen zeigen unterschiedliche Actions und Notationen (Objekt/Strin
   - `Migration20251229193600.php`: create_view (summary/active)
   - `Migration20251229193700.php`: insert (VALUES + INSERT...SELECT)
   - `Migration20251229193800.php`: update (SET + WHERE + Subquery)
+  - `Migration20251229193900.php`: update (JOIN-Update)
+  - `Migration20251229194000.php`: create_table (column comments)
 
 - `test/json_migrations/`
   - `Migration20251229193000.json`: create_table + drop_table (down)
@@ -358,3 +390,5 @@ Die Testmigrationen zeigen unterschiedliche Actions und Notationen (Objekt/Strin
   - `Migration20251229193600.json`: create_view (summary/active)
   - `Migration20251229193700.json`: insert (VALUES + INSERT...SELECT)
   - `Migration20251229193800.json`: update (SET + WHERE + Subquery)
+  - `Migration20251229193900.json`: update (JOIN-Update)
+  - `Migration20251229194000.json`: create_table (column comments)

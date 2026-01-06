@@ -1,0 +1,146 @@
+{
+  "$schema": "../../src/migration.schema.json",
+  "up": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_table",
+        "table": "test_insert_source",
+        "schema": "dbo",
+        "ifNotExists": true,
+        "columns": [
+          {
+            "name": "kSource",
+            "type": "int",
+            "autoIncrement": true,
+            "nullable": false,
+            "unsigned": true
+          },
+          {
+            "name": "cLabel",
+            "type": "string",
+            "length": 64,
+            "nullable": false
+          },
+          {
+            "name": "bActive",
+            "type": "boolean",
+            "nullable": false,
+            "default": 1
+          }
+        ],
+        "primaryKey": [
+          "kSource"
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_table",
+        "table": "test_insert_target",
+        "schema": "dbo",
+        "ifNotExists": true,
+        "columns": [
+          {
+            "name": "kTarget",
+            "type": "int",
+            "autoIncrement": true,
+            "nullable": false,
+            "unsigned": true
+          },
+          {
+            "name": "cLabel",
+            "type": "string",
+            "length": 64,
+            "nullable": false
+          },
+          {
+            "name": "bActive",
+            "type": "boolean",
+            "nullable": false,
+            "default": 1
+          }
+        ],
+        "primaryKey": [
+          "kTarget"
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "insert",
+        "table": "test_insert_source",
+        "schema": "dbo",
+        "columns": [
+          "cLabel",
+          "bActive"
+        ],
+        "values": [
+          [
+            "A",
+            1
+          ],
+          [
+            "B",
+            0
+          ],
+          [
+            "C",
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "insert",
+        "table": "test_insert_target",
+        "schema": "dbo",
+        "columns": [
+          "cLabel",
+          "bActive"
+        ],
+        "query": {
+          "select": [
+            "s.cLabel",
+            "s.bActive"
+          ],
+          "from": {
+            "table": "test_insert_source",
+            "as": "s"
+          },
+          "where": [
+            "s.bActive",
+            "=",
+            1
+          ],
+          "order_by": "s.cLabel ASC"
+        }
+      }
+    }
+  ],
+  "down": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_table",
+        "table": "test_insert_target",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_table",
+        "table": "test_insert_source",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    }
+  ]
+}
+

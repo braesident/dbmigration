@@ -1,0 +1,182 @@
+{
+  "$schema": "../../src/migration.schema.json",
+  "up": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_table",
+        "table": "test_update_source",
+        "schema": "dbo",
+        "ifNotExists": true,
+        "columns": [
+          {
+            "name": "kSource",
+            "type": "int",
+            "autoIncrement": true,
+            "unsigned": true,
+            "nullable": false
+          },
+          {
+            "name": "cLabel",
+            "type": "string",
+            "length": 64,
+            "nullable": false
+          }
+        ],
+        "primaryKey": [
+          "kSource"
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_table",
+        "table": "test_update_target",
+        "schema": "dbo",
+        "ifNotExists": true,
+        "columns": [
+          {
+            "name": "kTarget",
+            "type": "int",
+            "autoIncrement": true,
+            "unsigned": true,
+            "nullable": false
+          },
+          {
+            "name": "cLabel",
+            "type": "string",
+            "length": 64,
+            "nullable": false
+          },
+          {
+            "name": "cLast_label",
+            "type": "string",
+            "length": 64,
+            "nullable": true
+          },
+          {
+            "name": "nCounter",
+            "type": "int",
+            "nullable": false,
+            "default": 0
+          }
+        ],
+        "primaryKey": [
+          "kTarget"
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "insert",
+        "table": "test_update_source",
+        "schema": "dbo",
+        "columns": [
+          "cLabel"
+        ],
+        "values": [
+          [
+            "first"
+          ],
+          [
+            "second"
+          ]
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "insert",
+        "table": "test_update_target",
+        "schema": "dbo",
+        "columns": [
+          "cLabel",
+          "cLast_label",
+          "nCounter"
+        ],
+        "values": [
+          [
+            "A",
+            null,
+            0
+          ],
+          [
+            "B",
+            null,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "update",
+        "table": "test_update_target",
+        "schema": "dbo",
+        "set": {
+          "nCounter": {
+            "op": "+",
+            "left": "nCounter",
+            "right": 1
+          }
+        },
+        "where": [
+          "kTarget",
+          "=",
+          1
+        ],
+        "limit": 1
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "update",
+        "table": "test_update_target",
+        "schema": "dbo",
+        "set": {
+          "cLast_label": {
+            "query": {
+              "select": "cLabel",
+              "from": "test_update_source",
+              "order_by": "kSource DESC",
+              "limit": 1
+            }
+          },
+          "cLabel": "A-updated"
+        },
+        "where": [
+          "kTarget",
+          "=",
+          1
+        ],
+        "limit": 1
+      }
+    }
+  ],
+  "down": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_table",
+        "table": "test_update_target",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_table",
+        "table": "test_update_source",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    }
+  ]
+}
+

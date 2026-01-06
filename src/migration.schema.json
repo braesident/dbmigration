@@ -377,6 +377,27 @@
         "where": {
           "$ref": "#/$defs/queryCondition"
         },
+        "join": {
+          "$ref": "#/$defs/queryJoinList"
+        },
+        "inner_join": {
+          "$ref": "#/$defs/queryJoinList"
+        },
+        "innerJoin": {
+          "$ref": "#/$defs/queryJoinList"
+        },
+        "left_join": {
+          "$ref": "#/$defs/queryJoinList"
+        },
+        "leftJoin": {
+          "$ref": "#/$defs/queryJoinList"
+        },
+        "right_join": {
+          "$ref": "#/$defs/queryJoinList"
+        },
+        "rightJoin": {
+          "$ref": "#/$defs/queryJoinList"
+        },
         "limit": {
           "type": "integer",
           "minimum": 0
@@ -1028,6 +1049,9 @@
         },
         "sqlsrv": {
           "$ref": "#/$defs/sqlString"
+        },
+        "comment": {
+          "type": "string"
         }
       },
       "required": [

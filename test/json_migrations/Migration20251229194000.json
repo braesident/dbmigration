@@ -1,0 +1,51 @@
+{
+  "$schema": "../../src/migration.schema.json",
+  "up": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_table",
+        "table": "test_comment",
+        "schema": "dbo",
+        "ifNotExists": true,
+        "columns": [
+          {
+            "name": "kTest_comment",
+            "type": "int",
+            "autoIncrement": true,
+            "unsigned": true,
+            "nullable": false
+          },
+          {
+            "name": "bType",
+            "type": "tinyint",
+            "length": 1,
+            "nullable": false,
+            "comment": "0=history/1=note"
+          },
+          {
+            "name": "cText",
+            "type": "string",
+            "length": 255,
+            "nullable": true
+          }
+        ],
+        "primaryKey": [
+          "kTest_comment"
+        ]
+      }
+    }
+  ],
+  "down": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_table",
+        "table": "test_comment",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    }
+  ]
+}
+
