@@ -1136,6 +1136,20 @@ final class SelectBuilder
       return 'DATE_FORMAT('.$normalizedArgs[0].', '.$normalizedArgs[1].')';
     }
 
+    if (\in_array($fn, ['greatest', 'least'], true)) {
+      if (\count($normalizedArgs) < 2) {
+        throw new InvalidArgumentException($fn.' benötigt mindestens 2 Argumente.');
+      }
+
+      if ('sqlsrv' === $this->dialect) {
+        $operator = 'greatest' === $fn ? '>=' : '<=';
+
+        return $this->renderGreatestLeast($normalizedArgs, $operator);
+      }
+
+      return mb_strtoupper($fn).'('.implode(', ', $normalizedArgs).')';
+    }
+
     if (\in_array($fn, ['date_add', 'dateadd'], true)) {
       return $this->renderDateAddSub($args, false);
     }
@@ -1147,6 +1161,16 @@ final class SelectBuilder
     $fnName = mb_strtoupper($fn);
 
     return $fnName.'('.implode(', ', $normalizedArgs).')';
+  }
+
+  private function renderGreatestLeast(array $normalizedArgs, string $operator): string
+  {
+    $expr = array_shift($normalizedArgs);
+    foreach ($normalizedArgs as $next) {
+      $expr = 'CASE WHEN '.$expr.' '.$operator.' '.$next.' THEN '.$expr.' ELSE '.$next.' END';
+    }
+
+    return $expr;
   }
 
   private function normalizeFunctionArgs(string $fn, mixed $args): array
