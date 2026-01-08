@@ -1,0 +1,172 @@
+{
+  "$schema": "../../src/migration.schema.json",
+  "up": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_table",
+        "table": "test_delete_parent",
+        "schema": "dbo",
+        "ifNotExists": true,
+        "columns": [
+          {
+            "name": "kParent",
+            "type": "int",
+            "autoIncrement": true,
+            "unsigned": true,
+            "nullable": false
+          },
+          {
+            "name": "cLabel",
+            "type": "string",
+            "length": 32,
+            "nullable": false
+          }
+        ],
+        "primaryKey": [
+          "kParent"
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_table",
+        "table": "test_delete_child",
+        "schema": "dbo",
+        "ifNotExists": true,
+        "columns": [
+          {
+            "name": "kChild",
+            "type": "int",
+            "autoIncrement": true,
+            "unsigned": true,
+            "nullable": false
+          },
+          {
+            "name": "kParent",
+            "type": "int",
+            "nullable": false
+          },
+          {
+            "name": "cLabel",
+            "type": "string",
+            "length": 32,
+            "nullable": true
+          }
+        ],
+        "primaryKey": [
+          "kChild"
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "insert",
+        "table": "test_delete_parent",
+        "schema": "dbo",
+        "columns": [
+          "cLabel"
+        ],
+        "values": [
+          [
+            "P1"
+          ],
+          [
+            "P2"
+          ]
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "insert",
+        "table": "test_delete_child",
+        "schema": "dbo",
+        "columns": [
+          "kParent",
+          "cLabel"
+        ],
+        "values": [
+          [
+            1,
+            "C1"
+          ],
+          [
+            1,
+            "C2"
+          ],
+          [
+            2,
+            "C3"
+          ]
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "delete",
+        "table": "test_delete_child",
+        "schema": "dbo",
+        "as": "c",
+        "join": [
+          {
+            "table": "test_delete_parent",
+            "as": "p",
+            "on": [
+              "c.kParent",
+              "=",
+              "p.kParent"
+            ]
+          }
+        ],
+        "where": [
+          "p.cLabel",
+          "=",
+          {
+            "value": "P1"
+          }
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "delete",
+        "table": "test_delete_parent",
+        "schema": "dbo",
+        "where": [
+          "cLabel",
+          "=",
+          {
+            "value": "P2"
+          }
+        ],
+        "limit": 1
+      }
+    }
+  ],
+  "down": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_table",
+        "table": "test_delete_child",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_table",
+        "table": "test_delete_parent",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    }
+  ]
+}

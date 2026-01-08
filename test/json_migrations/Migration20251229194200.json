@@ -1,0 +1,181 @@
+{
+  "$schema": "../../src/migration.schema.json",
+  "up": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_table",
+        "table": "test_trigger_source",
+        "schema": "dbo",
+        "ifNotExists": true,
+        "columns": [
+          {
+            "name": "kSource",
+            "type": "int",
+            "autoIncrement": true,
+            "unsigned": true,
+            "nullable": false
+          },
+          {
+            "name": "cLabel",
+            "type": "string",
+            "length": 32,
+            "nullable": false
+          }
+        ],
+        "primaryKey": [
+          "kSource"
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_table",
+        "table": "test_trigger_log",
+        "schema": "dbo",
+        "ifNotExists": true,
+        "columns": [
+          {
+            "name": "kLog",
+            "type": "int",
+            "autoIncrement": true,
+            "unsigned": true,
+            "nullable": false
+          },
+          {
+            "name": "kSource",
+            "type": "int",
+            "nullable": false
+          },
+          {
+            "name": "cAction",
+            "type": "string",
+            "length": 16,
+            "nullable": false
+          },
+          {
+            "name": "tCreated",
+            "type": "timestamp",
+            "nullable": false,
+            "default": "CURRENT_TIMESTAMP"
+          }
+        ],
+        "primaryKey": [
+          "kLog"
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "create_trigger",
+        "name": "trg_test_trigger_source_delete",
+        "table": "test_trigger_source",
+        "schema": "dbo",
+        "timing": "after",
+        "event": "delete",
+        "body": {
+          "mysql": {
+            "type": "insert",
+            "table": "test_trigger_log",
+            "schema": "dbo",
+            "columns": [
+              "kSource",
+              "cAction"
+            ],
+            "values": [
+              [
+                {
+                  "raw": "OLD.kSource"
+                },
+                "deleted"
+              ]
+            ]
+          },
+          "sqlsrv": {
+            "type": "insert",
+            "table": "test_trigger_log",
+            "schema": "dbo",
+            "columns": [
+              "kSource",
+              "cAction"
+            ],
+            "query": {
+              "select": [
+                "kSource",
+                {
+                  "value": "deleted"
+                }
+              ],
+              "from": "deleted"
+            }
+          }
+        }
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "insert",
+        "table": "test_trigger_source",
+        "schema": "dbo",
+        "columns": [
+          "cLabel"
+        ],
+        "values": [
+          [
+            "S1"
+          ],
+          [
+            "S2"
+          ]
+        ]
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "delete",
+        "table": "test_trigger_source",
+        "schema": "dbo",
+        "where": [
+          "cLabel",
+          "=",
+          {
+            "value": "S1"
+          }
+        ]
+      }
+    }
+  ],
+  "down": [
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_trigger",
+        "name": "trg_test_trigger_source_delete",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_table",
+        "table": "test_trigger_log",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    },
+    {
+      "builder": "sql",
+      "definition": {
+        "type": "drop_table",
+        "table": "test_trigger_source",
+        "schema": "dbo",
+        "ifExists": true
+      }
+    }
+  ]
+}
