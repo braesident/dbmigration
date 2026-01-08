@@ -256,6 +256,49 @@ CREATE TRIGGER mit dialektspezifischem `body` (MySQL nutzt `OLD`, SQL Server `de
 }
 ```
 
+## SqlRenderer
+
+Für normale Projekt‑Queries (außerhalb von Migrationen). Rendert SQL aus Builder‑Definitionen, Dialekt‑Maps oder SELECT‑ASTs.
+
+Minimal:
+```php
+use Braesident\DbMigration\SqlRenderer;
+
+$renderer = new SqlRenderer($pdo);
+$sql = $renderer->render([
+  'select' => ['*'],
+  'from' => 'extensions',
+  'where' => ['eStatus', '=', ['raw' => ':status']]
+]);
+```
+
+Mehrere Statements (z. B. Trigger/Kommentare):
+```php
+$statements = $renderer->renderAll($definition);
+foreach ($statements as $sql) {
+  $stmt = $pdo->prepare($sql);
+  $stmt->execute($params);
+}
+```
+
+Dialekt‑Map (raw SQL):
+```php
+$sql = $renderer->render([
+  'mysql' => 'SELECT NOW()',
+  'sqlsrv' => 'SELECT SYSDATETIME()'
+]);
+```
+
+Builder‑Definition:
+```php
+$sql = $renderer->render([
+  'type' => 'update',
+  'table' => 'extensions',
+  'set' => ['eStatus' => ['raw' => ':status']],
+  'where' => ['kExtension', '=', ['raw' => ':id']]
+]);
+```
+
 ## SelectBuilder (Kurzform)
 
 JSON (query-basierter View):
