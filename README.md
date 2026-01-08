@@ -10,6 +10,7 @@ Die JSON-Variante nutzt einen Builder (SqlBuilder) und kann Dialekt-SQL für mys
 - Step:
   - Builder-Step: `{ "builder": "sql", "definition": { ... } }`
   - Dialekt-SQL: `{ "mysql": "...", "sqlsrv": "...", "sql": "...", "default": "..." }`
+  - Optional: `only`/`exclude` (oder `dialects`/`include`) begrenzen Steps auf Dialekte, z.B. `{ "only": ["sqlsrv"] }`
 
 ## Builder-Definitionen
 
@@ -18,8 +19,12 @@ Die JSON-Variante nutzt einen Builder (SqlBuilder) und kann Dialekt-SQL für mys
 - `alter_table`: Tabelle verändern (Actions, siehe unten)
 - `create_view`: View erzeugen/ersetzen
 - `drop_view`: View löschen
+- `create_trigger`: Trigger erstellen
+- `alter_trigger`: Trigger ändern (mysql: DROP + CREATE)
+- `drop_trigger`: Trigger entfernen
 - `insert`: INSERT (VALUES oder INSERT...SELECT)
 - `update`: UPDATE (SET + WHERE)
+- `delete`: DELETE (optional JOINs, WHERE, LIMIT)
 - `raw`: Dialekt-SQL direkt
 
 ## alter_table Actions
@@ -41,6 +46,8 @@ Hinweise:
 - Views: `create_view` nutzt in mysql `CREATE OR REPLACE VIEW`. In sqlsrv wird bei `replace=true` zuerst eine Dummy-View erzeugt und dann `ALTER VIEW` genutzt.
 - Views: `select` kann ein String, ein String-Array oder ein Dialekt-Map sein (z.B. `{ "mysql": [...], "sqlsrv": [...] }`).
 - Views: Alternativ kann `query` verwendet werden (JSON-Query-Builder). Dann wird der SELECT aus der Struktur gebaut.
+- Trigger: `body` kann ein String, String-Array, Dialekt-Map oder Builder-Definition(en) sein (z.B. `insert`/`update`/`delete`).
+- Trigger: `timing` kann dialektspezifisch sein (z.B. `{ "mysql": "before", "sqlsrv": "instead of" }`).
 
 ## Datentypen (Hinweise)
 
@@ -172,6 +179,79 @@ Join-Update:
     },
     "where": ["o.eStatus", "<>", { "value": "deleted" }],
     "limit": 10
+  }
+}
+```
+
+## delete
+
+Unterstützt:
+- `DELETE ... WHERE ...` (optional: `limit` / sqlsrv: `TOP`)
+- Join-Deletes über `join`/`left_join`/`right_join` (MySQL: `DELETE alias FROM ... JOIN ...`, SQL Server: `DELETE alias FROM ... JOIN ...`)
+
+Einfaches DELETE:
+```json
+{
+  "builder": "sql",
+  "definition": {
+    "type": "delete",
+    "table": "test_delete_parent",
+    "where": ["cLabel", "=", { "value": "P2" }],
+    "limit": 1
+  }
+}
+```
+
+Join-Delete:
+```json
+{
+  "builder": "sql",
+  "definition": {
+    "type": "delete",
+    "table": "test_delete_child",
+    "as": "c",
+    "join": [
+      {
+        "table": "test_delete_parent",
+        "as": "p",
+        "on": ["c.kParent", "=", "p.kParent"]
+      }
+    ],
+    "where": ["p.cLabel", "=", { "value": "P1" }]
+  }
+}
+```
+
+## trigger
+
+CREATE TRIGGER mit dialektspezifischem `body` (MySQL nutzt `OLD`, SQL Server `deleted`):
+```json
+{
+  "builder": "sql",
+  "definition": {
+    "type": "create_trigger",
+    "name": "trg_test_trigger_source_delete",
+    "table": "test_trigger_source",
+    "schema": "dbo",
+    "timing": "after",
+    "event": "delete",
+    "body": {
+      "mysql": {
+        "type": "insert",
+        "table": "test_trigger_log",
+        "columns": ["kSource", "cAction"],
+        "values": [[{ "raw": "OLD.kSource" }, "deleted"]]
+      },
+      "sqlsrv": {
+        "type": "insert",
+        "table": "test_trigger_log",
+        "columns": ["kSource", "cAction"],
+        "query": {
+          "select": ["kSource", { "value": "deleted" }],
+          "from": "deleted"
+        }
+      }
+    }
   }
 }
 ```
@@ -384,6 +464,8 @@ Die Testmigrationen zeigen unterschiedliche Actions und Notationen (Objekt/Strin
   - `Migration20251229193800.php`: update (SET + WHERE + Subquery)
   - `Migration20251229193900.php`: update (JOIN-Update)
   - `Migration20251229194000.php`: create_table (column comments)
+  - `Migration20251229194100.php`: delete (WHERE + JOIN)
+  - `Migration20251229194200.php`: create_trigger (DELETE -> log)
 
 - `test/json_migrations/`
   - `Migration20251229193000.json`: create_table + drop_table (down)
@@ -397,3 +479,5 @@ Die Testmigrationen zeigen unterschiedliche Actions und Notationen (Objekt/Strin
   - `Migration20251229193800.json`: update (SET + WHERE + Subquery)
   - `Migration20251229193900.json`: update (JOIN-Update)
   - `Migration20251229194000.json`: create_table (column comments)
+  - `Migration20251229194100.json`: delete (WHERE + JOIN)
+  - `Migration20251229194200.json`: create_trigger (DELETE -> log)

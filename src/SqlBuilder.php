@@ -24,9 +24,13 @@ final class SqlBuilder
       'drop_table'   => self::buildDropTable($normalized, $dialect),
       'create_view'  => self::buildCreateView($normalized, $dialect, $context),
       'drop_view'    => self::buildDropView($normalized, $dialect),
+      'create_trigger' => self::buildCreateTrigger($normalized, $dialect, $context),
+      'alter_trigger'  => self::buildAlterTrigger($normalized, $dialect, $context),
+      'drop_trigger'   => self::buildDropTrigger($normalized, $dialect),
       'alter_table'  => self::buildAlterTable($normalized, $dialect, $context),
       'insert'       => self::buildInsert($normalized, $dialect, $context),
       'update'       => self::buildUpdate($normalized, $dialect, $context),
+      'delete'       => self::buildDelete($normalized, $dialect, $context),
       'raw'          => self::buildRaw($normalized, $dialect),
       default        => throw new InvalidArgumentException('SQL-Builder kennt den Typ nicht: '.$type)
     };
@@ -326,6 +330,391 @@ final class SqlBuilder
     $sql .= ' `'.$view.'`';
 
     return $sql;
+  }
+
+  private static function buildCreateTrigger(array $definition, string $dialect, array $context): string|array
+  {
+    return self::buildTriggerStatement($definition, $dialect, $context, 'CREATE');
+  }
+
+  private static function buildAlterTrigger(array $definition, string $dialect, array $context): string|array
+  {
+    if ('mysql' === $dialect) {
+      $name   = self::normalizeTriggerName($definition);
+      $schema = (string) ($definition['schema'] ?? 'dbo');
+
+      $dropSql   = self::buildDropTrigger(['name' => $name, 'schema' => $schema, 'ifExists' => true], $dialect);
+      $createSql = self::buildTriggerStatement($definition, $dialect, $context, 'CREATE');
+
+      return [$dropSql, $createSql];
+    }
+
+    return self::buildTriggerStatement($definition, $dialect, $context, 'ALTER');
+  }
+
+  private static function buildDropTrigger(array $definition, string $dialect): string
+  {
+    $name = (string) ($definition['name'] ?? $definition['trigger'] ?? $definition['triggerName'] ?? '');
+    if ('' === $name) {
+      throw new InvalidArgumentException('drop_trigger benötigt "name".');
+    }
+
+    $schema   = (string) ($definition['schema'] ?? 'dbo');
+    $ifExists = \array_key_exists('ifExists', $definition) ? (bool) $definition['ifExists'] : true;
+
+    if ('sqlsrv' === $dialect) {
+      $triggerRef = '['.$schema.'].['.$name.']';
+      if ($ifExists) {
+        return "IF OBJECT_ID(N'".$triggerRef."', N'TR') IS NOT NULL DROP TRIGGER ".$triggerRef;
+      }
+
+      return 'DROP TRIGGER '.$triggerRef;
+    }
+
+    $sql = 'DROP TRIGGER';
+    if ($ifExists) {
+      $sql .= ' IF EXISTS';
+    }
+    $sql .= ' `'.$name.'`';
+
+    return $sql;
+  }
+
+  private static function buildTriggerStatement(array $definition, string $dialect, array $context, string $action): string
+  {
+    $name   = self::normalizeTriggerName($definition);
+    $table  = (string) ($definition['table'] ?? '');
+    if ('' === $table) {
+      throw new InvalidArgumentException('trigger benötigt "table".');
+    }
+
+    $schema = (string) ($definition['schema'] ?? 'dbo');
+    $timing = self::normalizeTriggerTiming($definition['timing'] ?? $definition['time'] ?? null, $dialect);
+    $events = self::normalizeTriggerEvents($definition['events'] ?? $definition['event'] ?? null, $dialect);
+
+    $body = $definition['body'] ?? $definition['statement'] ?? $definition['sql'] ?? null;
+    if (null === $body) {
+      throw new InvalidArgumentException('trigger benötigt "body" oder "statement".');
+    }
+    [$bodySql, $autoWrap] = self::normalizeTriggerBody($body, $dialect, $context);
+    $wrap = $definition['wrap'] ?? $definition['wrapBody'] ?? null;
+    $wrap = \is_bool($wrap) ? $wrap : $autoWrap;
+    if ($wrap) {
+      $bodySql = "BEGIN\n".$bodySql."\nEND";
+    }
+
+    if ('sqlsrv' === $dialect) {
+      $triggerRef = '['.$schema.'].['.$name.']';
+      $tableRef   = '['.$schema.'].['.$table.']';
+      $eventSql   = implode(', ', $events);
+
+      return $action.' TRIGGER '.$triggerRef.' ON '.$tableRef.' '.$timing.' '.$eventSql.' AS '.$bodySql;
+    }
+
+    $event = $events[0];
+    $forEachRow = \array_key_exists('forEachRow', $definition) ? (bool) $definition['forEachRow'] : true;
+    if ( ! $forEachRow) {
+      throw new InvalidArgumentException('mysql trigger benötigt FOR EACH ROW.');
+    }
+    $sql = $action.' TRIGGER `'.$name.'` '.$timing.' '.$event.' ON `'.$table.'`';
+    $sql .= ' FOR EACH ROW';
+    $sql .= ' '.$bodySql;
+
+    return $sql;
+  }
+
+  private static function normalizeTriggerName(array $definition): string
+  {
+    $name = (string) ($definition['name'] ?? $definition['trigger'] ?? $definition['triggerName'] ?? '');
+    if ('' === $name) {
+      throw new InvalidArgumentException('trigger benötigt "name".');
+    }
+
+    return $name;
+  }
+
+  private static function normalizeTriggerTiming(mixed $timing, string $dialect): string
+  {
+    if (null === $timing) {
+      $timing = 'after';
+    }
+
+    $timing = self::resolveDialectSqlString($timing, $dialect, 'trigger timing');
+
+    $normalized = mb_strtolower(trim($timing));
+    if ('' === $normalized) {
+      throw new InvalidArgumentException('trigger timing fehlt.');
+    }
+
+    $normalized = str_replace(['_', '-'], ' ', $normalized);
+    $normalized = preg_replace('/\\s+/', ' ', $normalized);
+
+    if ('sqlsrv' === $dialect) {
+      if (\in_array($normalized, ['after', 'for'], true)) {
+        return 'AFTER';
+      }
+      if ('instead of' === $normalized) {
+        return 'INSTEAD OF';
+      }
+      throw new InvalidArgumentException('sqlsrv trigger timing muss AFTER oder INSTEAD OF sein.');
+    }
+
+    if ('before' === $normalized) {
+      return 'BEFORE';
+    }
+    if ('after' === $normalized) {
+      return 'AFTER';
+    }
+
+    throw new InvalidArgumentException('mysql trigger timing muss BEFORE oder AFTER sein.');
+  }
+
+  private static function normalizeTriggerEvents(mixed $events, string $dialect): array
+  {
+    if (null === $events) {
+      throw new InvalidArgumentException('trigger benötigt "event" oder "events".');
+    }
+    if (\is_object($events)) {
+      $events = self::objectToArray($events);
+    }
+
+    $parts = [];
+    if (\is_string($events)) {
+      $normalized = trim($events);
+      if ('' === $normalized) {
+        throw new InvalidArgumentException('trigger events dürfen nicht leer sein.');
+      }
+      $parts = preg_split('/\\s*,\\s*|\\s+/', $normalized);
+    } elseif (\is_array($events)) {
+      $parts = self::isList($events) ? $events : array_values($events);
+    } else {
+      throw new InvalidArgumentException('trigger events müssen string oder array sein.');
+    }
+
+    $out = [];
+    foreach ($parts as $event) {
+      if ( ! \is_string($event)) {
+        throw new InvalidArgumentException('trigger event muss string sein.');
+      }
+      $event = mb_strtoupper(trim($event));
+      if ('' === $event) {
+        continue;
+      }
+      if ( ! \in_array($event, ['INSERT', 'UPDATE', 'DELETE'], true)) {
+        throw new InvalidArgumentException('Unbekanntes trigger event: '.$event);
+      }
+      $out[] = $event;
+    }
+
+    if ([] === $out) {
+      throw new InvalidArgumentException('trigger events dürfen nicht leer sein.');
+    }
+    if ('mysql' === $dialect && \count($out) !== 1) {
+      throw new InvalidArgumentException('mysql trigger unterstützt nur ein Event.');
+    }
+
+    return $out;
+  }
+
+  private static function normalizeTriggerBody(mixed $body, string $dialect, array $context): array
+  {
+    $body = self::resolveDialectTriggerBody($body, $dialect);
+
+    if (\is_array($body) && self::isList($body)) {
+      $lines = [];
+      foreach ($body as $item) {
+        $lines = array_merge($lines, self::renderTriggerBodyLines($item, $dialect, $context));
+      }
+      if ([] === $lines) {
+        throw new InvalidArgumentException('trigger body darf nicht leer sein.');
+      }
+
+      return [implode("\n", $lines), true];
+    }
+
+    $lines = self::renderTriggerBodyLines($body, $dialect, $context);
+    if ([] === $lines) {
+      throw new InvalidArgumentException('trigger body darf nicht leer sein.');
+    }
+
+    return [implode("\n", $lines), false];
+  }
+
+  private static function renderTriggerBodyLines(mixed $item, string $dialect, array $context): array
+  {
+    if ($item instanceof stdClass) {
+      $item = (array) $item;
+    }
+
+    if (\is_string($item)) {
+      $line = rtrim($item);
+
+      return '' === $line ? [] : [$line];
+    }
+
+    if (\is_array($item)) {
+      if (self::isList($item)) {
+        $lines = [];
+        foreach ($item as $part) {
+          $lines = array_merge($lines, self::renderTriggerBodyLines($part, $dialect, $context));
+        }
+
+        return $lines;
+      }
+
+      if (self::looksLikeDefinition($item)) {
+        $definition = self::extractDefinition($item);
+        $sql        = self::build($definition, $context);
+
+        return self::normalizeTriggerBodySql($sql);
+      }
+
+      $resolved = self::resolveDialectTriggerBody($item, $dialect);
+      if ($resolved !== $item) {
+        return self::renderTriggerBodyLines($resolved, $dialect, $context);
+      }
+    }
+
+    throw new InvalidArgumentException('trigger body item muss SQL oder Definition sein.');
+  }
+
+  private static function normalizeTriggerBodySql(string|array $sql): array
+  {
+    if (\is_string($sql)) {
+      $sql = trim($sql);
+
+      return '' === $sql ? [] : [$sql];
+    }
+    if ( ! \is_array($sql) || ! self::isList($sql)) {
+      throw new InvalidArgumentException('trigger body SQL muss string oder array sein.');
+    }
+    $lines = [];
+    foreach ($sql as $line) {
+      if ( ! \is_string($line)) {
+        throw new InvalidArgumentException('trigger body SQL array benötigt strings.');
+      }
+      $line = rtrim($line);
+      if ('' !== $line) {
+        $lines[] = $line;
+      }
+    }
+
+    return $lines;
+  }
+
+  private static function resolveDialectTriggerBody(mixed $value, string $dialect): mixed
+  {
+    if ($value instanceof stdClass) {
+      $value = (array) $value;
+    }
+
+    if (\is_string($value) || null === $value) {
+      return $value;
+    }
+
+    if (\is_array($value)) {
+      if (self::isList($value)) {
+        return $value;
+      }
+      if (self::looksLikeDefinition($value)) {
+        return $value;
+      }
+
+      $normalized = [];
+      foreach ($value as $key => $val) {
+        $normalized[mb_strtolower((string) $key)] = $val;
+      }
+
+      $dialectMap = [
+        'mysql'  => ['mysql', 'mariadb'],
+        'sqlsrv' => ['sqlsrv', 'sqlserver', 'mssql']
+      ];
+
+      if (isset($dialectMap[$dialect])) {
+        foreach ($dialectMap[$dialect] as $key) {
+          if (array_key_exists($key, $normalized)) {
+            return $normalized[$key];
+          }
+        }
+      }
+
+      if (array_key_exists('sql', $normalized)) {
+        return $normalized['sql'];
+      }
+      if (array_key_exists('default', $normalized)) {
+        return $normalized['default'];
+      }
+    }
+
+    return $value;
+  }
+
+  private static function looksLikeDefinition(array $value): bool
+  {
+    $keys = array_map(static fn ($key) => mb_strtolower((string) $key), array_keys($value));
+
+    return \in_array('type', $keys, true) || \in_array('definition', $keys, true) || \in_array('builder', $keys, true);
+  }
+
+  private static function extractDefinition(array $value): array
+  {
+    if (array_key_exists('definition', $value)) {
+      return self::normalizeDefinition($value['definition']);
+    }
+
+    return $value;
+  }
+
+  private static function resolveDialectSqlStringOrList(mixed $value, string $dialect): string|array
+  {
+    if (\is_object($value)) {
+      $value = self::objectToArray($value);
+    }
+    if (\is_string($value)) {
+      return $value;
+    }
+    if (\is_array($value)) {
+      if (self::isList($value)) {
+        return $value;
+      }
+
+      $normalized = [];
+      foreach ($value as $key => $val) {
+        $normalized[mb_strtolower((string) $key)] = $val;
+      }
+
+      $dialectMap = [
+        'mysql'  => ['mysql', 'mariadb'],
+        'sqlsrv' => ['sqlsrv', 'sqlserver', 'mssql']
+      ];
+
+      if (isset($dialectMap[$dialect])) {
+        foreach ($dialectMap[$dialect] as $key) {
+          if (array_key_exists($key, $normalized)) {
+            return $normalized[$key];
+          }
+        }
+      }
+
+      if (array_key_exists('sql', $normalized)) {
+        return $normalized['sql'];
+      }
+      if (array_key_exists('default', $normalized)) {
+        return $normalized['default'];
+      }
+    }
+
+    throw new InvalidArgumentException('Kein SQL für Trigger-Body gefunden.');
+  }
+
+  private static function resolveDialectSqlString(mixed $value, string $dialect, string $label = 'SQL'): string
+  {
+    $resolved = self::resolveDialectSqlStringOrList($value, $dialect);
+    if ( \is_array($resolved)) {
+      throw new InvalidArgumentException($label.' muss string sein.');
+    }
+
+    return $resolved;
   }
 
   private static function buildAlterTable(array $definition, string $dialect, array $context): string|array
@@ -949,6 +1338,95 @@ final class SqlBuilder
     return $sql;
   }
 
+  private static function buildDelete(array $definition, string $dialect, array $context): string
+  {
+    $table = (string) ($definition['table'] ?? '');
+    if ('' === $table) {
+      throw new InvalidArgumentException('delete benötigt "table".');
+    }
+
+    $schema = (string) ($definition['schema'] ?? 'dbo');
+    $alias  = $definition['as'] ?? $definition['alias'] ?? null;
+    if (null !== $alias && ! \is_string($alias)) {
+      throw new InvalidArgumentException('delete "as/alias" muss string sein.');
+    }
+    $alias = \is_string($alias) ? trim($alias) : null;
+    if ('' === $alias) {
+      $alias = null;
+    }
+
+    $joins = self::normalizeUpdateJoins($definition, $dialect, $context, $schema);
+    $joinSql = '';
+    if ([] !== $joins) {
+      $parts = [];
+      foreach ($joins as $join) {
+        $parts[] = self::renderUpdateJoin($join, $dialect, $context, $schema);
+      }
+      $joinSql = implode(' ', $parts);
+    }
+
+    $where = $definition['where'] ?? null;
+    if (null !== $where && \is_object($where)) {
+      $where = self::objectToArray($where);
+    }
+
+    $whereSql = null;
+    if (null !== $where) {
+      $whereSql = self::buildUpdateWhere($where, $context);
+    }
+
+    $limit = $definition['limit'] ?? null;
+    $limit = is_numeric($limit) ? (int) $limit : null;
+    if (null !== $limit && $limit < 0) {
+      $limit = null;
+    }
+
+    $tableRef = 'sqlsrv' === $dialect ? '['.$schema.'].['.$table.']' : self::quoteIdentifierPath($table, $dialect);
+    $aliasSql = $alias ? self::quoteColumn($alias, $dialect) : null;
+
+    if ('sqlsrv' === $dialect) {
+      $sql = 'DELETE';
+      if (null !== $limit) {
+        $sql .= ' TOP ('.$limit.')';
+      }
+      $sql .= ' '.($aliasSql ?? $tableRef);
+      if ($aliasSql || '' !== $joinSql) {
+        $sql .= ' FROM '.$tableRef;
+        if ($aliasSql) {
+          $sql .= ' AS '.$aliasSql;
+        }
+        if ('' !== $joinSql) {
+          $sql .= ' '.$joinSql;
+        }
+      }
+      if (\is_string($whereSql) && '' !== $whereSql) {
+        $sql .= ' WHERE '.$whereSql;
+      }
+
+      return $sql;
+    }
+
+    if ($aliasSql || '' !== $joinSql) {
+      $sql = 'DELETE '.($aliasSql ?? $tableRef).' FROM '.$tableRef;
+      if ($aliasSql) {
+        $sql .= ' AS '.$aliasSql;
+      }
+      if ('' !== $joinSql) {
+        $sql .= ' '.$joinSql;
+      }
+    } else {
+      $sql = 'DELETE FROM '.$tableRef;
+    }
+    if (\is_string($whereSql) && '' !== $whereSql) {
+      $sql .= ' WHERE '.$whereSql;
+    }
+    if (null !== $limit) {
+      $sql .= ' LIMIT '.$limit;
+    }
+
+    return $sql;
+  }
+
   private static function normalizeUpdateSet(mixed $set): array
   {
     if (\is_object($set)) {
@@ -1481,8 +1959,8 @@ final class SqlBuilder
     $columns    = $fkDef['columns'] ?? [];
     $refTable   = $fkDef['refTable'] ?? '';
     $refColumns = $fkDef['refColumns'] ?? [];
-    $onDelete   = $fkDef['onDelete'] ?? null;
-    $onUpdate   = $fkDef['onUpdate'] ?? null;
+    $onDelete   = self::normalizeForeignKeyAction($fkDef['onDelete'] ?? null, $dialect);
+    $onUpdate   = self::normalizeForeignKeyAction($fkDef['onUpdate'] ?? null, $dialect);
 
     $sql = 'FOREIGN KEY ('.self::quoteColumnList($columns, $dialect).') ';
     if ($name) {
@@ -1493,13 +1971,46 @@ final class SqlBuilder
       : '`'.$refTable.'`';
     $sql .= 'REFERENCES '.$refTableSql.' ('.self::quoteColumnList($refColumns, $dialect).')';
     if ($onDelete) {
-      $sql .= ' ON DELETE '.mb_strtoupper((string) $onDelete);
+      $sql .= ' ON DELETE '.$onDelete;
     }
     if ($onUpdate) {
-      $sql .= ' ON UPDATE '.mb_strtoupper((string) $onUpdate);
+      $sql .= ' ON UPDATE '.$onUpdate;
     }
 
     return $sql;
+  }
+
+  private static function normalizeForeignKeyAction(mixed $action, string $dialect): ?string
+  {
+    if ( ! \is_string($action)) {
+      return null;
+    }
+
+    $normalized = mb_strtoupper(trim($action));
+    if ('' === $normalized) {
+      return null;
+    }
+
+    $normalized = str_replace(['_', '-'], ' ', $normalized);
+    $normalized = preg_replace('/\\s+/', ' ', $normalized);
+
+    if ('sqlsrv' === $dialect) {
+      if ('RESTRICT' === $normalized) {
+        return 'NO ACTION';
+      }
+      if ('NOACTION' === $normalized) {
+        return 'NO ACTION';
+      }
+    }
+
+    if ('SETNULL' === $normalized) {
+      return 'SET NULL';
+    }
+    if ('SETDEFAULT' === $normalized) {
+      return 'SET DEFAULT';
+    }
+
+    return $normalized;
   }
 
   private static function buildCheck(array $checkDef, string $dialect): string
