@@ -123,8 +123,7 @@ final class Migration20251229193900 extends Migration implements iMigration
         'set' => [
           ['cSource_label', ['col' => 's.cLabel']]
         ],
-        'where' => ['t.cLabel', '=', ['value' => 'T1']],
-        'limit' => 1
+        'where' => ['t.cLabel', '=', ['value' => 'T1']]
       ]
     ]);
   }
@@ -152,4 +151,3 @@ final class Migration20251229193900 extends Migration implements iMigration
     ]);
   }
 }
-
