@@ -289,6 +289,32 @@ $sql = $renderer->render([
 ]);
 ```
 
+WhereBuilder (kompakte WHERE + Params):
+```php
+use Braesident\DbMigration\WhereBuilder;
+
+$where = new WhereBuilder();
+$where->andNotEquals('o.eStatus', 'deleted');
+$where->andParam('o.kAccount', '=', (int) $accountId, 'kaccount');
+$where->andIn('o.eStatus', $statusFilter, 'status');
+$where->orIn('o.eStatus', $fallbackFilter, 'status_fallback');
+
+$objTotals['where'] = $where->conditions();
+$params = $where->params();
+```
+
+Gruppierung:
+```php
+$where = new WhereBuilder();
+$where->andEquals('a', 1)
+      ->andEquals('b', 2)
+      ->orEquals('c', 3)
+      ->orGroup([
+        ['d', '=', 4],
+        ['e', '=', 5]
+      ]);
+```
+
 Builder‑Definition:
 ```php
 $sql = $renderer->render([
