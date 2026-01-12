@@ -532,6 +532,13 @@ final class SelectBuilder
 
     if (\is_array($from)) {
       $alias = $from['as'] ?? $from['alias'] ?? $as;
+      $schema = $from['schema'] ?? null;
+      if (\is_string($schema)) {
+        $schema = trim($schema);
+        if ('' === $schema) {
+          $schema = null;
+        }
+      }
       if (isset($from['query'])) {
         return [
           'type'  => 'query',
@@ -544,7 +551,8 @@ final class SelectBuilder
         return [
           'type'  => 'table',
           'value' => $table,
-          'as'    => $alias
+          'as'    => $alias,
+          'schema' => $schema
         ];
       }
     }
@@ -585,6 +593,13 @@ final class SelectBuilder
       $alias = $join['as'] ?? $join['alias'] ?? null;
       $on    = $join['on'] ?? null;
       $using = $join['using'] ?? null;
+      $schema = $join['schema'] ?? null;
+      if (\is_string($schema)) {
+        $schema = trim($schema);
+        if ('' === $schema) {
+          $schema = null;
+        }
+      }
 
       if (null === $table && null === $query) {
         throw new InvalidArgumentException('join benötigt table oder query.');
@@ -594,6 +609,7 @@ final class SelectBuilder
         'type'  => $type,
         'table' => $table,
         'query' => $query,
+        'schema' => $schema,
         'as'    => $alias,
         'on'    => $on,
         'using' => $using
@@ -738,6 +754,11 @@ final class SelectBuilder
       throw new InvalidArgumentException('from benötigt table.');
     }
 
+    $schema = $from['schema'] ?? null;
+    if (\is_string($schema) && '' !== $schema && false === strpos($table, '.')) {
+      $table = $schema.'.'.$table;
+    }
+
     $tableRef = $this->quoteIdentifierPath($table);
 
     if (\is_string($alias) && '' !== $alias) {
@@ -753,10 +774,14 @@ final class SelectBuilder
     $table = $join['table'] ?? null;
     $query = $join['query'] ?? null;
     $alias = $join['as'] ?? null;
+    $schema = $join['schema'] ?? null;
 
     if (null !== $query) {
       $source = $this->renderSubquery($query);
     } elseif (\is_string($table) && '' !== $table) {
+      if (\is_string($schema) && '' !== $schema && false === strpos($table, '.')) {
+        $table = $schema.'.'.$table;
+      }
       $source = $this->quoteIdentifierPath($table);
     } else {
       throw new InvalidArgumentException('join benötigt table oder query.');

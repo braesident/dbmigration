@@ -474,6 +474,14 @@ $sql = $renderer->render([
 ]);
 ```
 
+Mit Schema (SQL Server):
+```php
+$sql = $renderer->render([
+  'select' => ['*'],
+  'from' => ['schema' => 'dbo', 'table' => 'view_account']
+]);
+```
+
 Mehrere Statements (z. B. Trigger/Kommentare):
 ```php
 $statements = $renderer->renderAll($definition);
@@ -490,6 +498,12 @@ $sql = $renderer->render([
   'sqlsrv' => 'SELECT SYSDATETIME()'
 ]);
 ```
+
+Schema‑Hinweis (SQL Server):
+- Builder‑Definitionen (z. B. `create_table`, `create_view`, `insert`, `update`, `delete`) unterstützen `schema` direkt am Root.
+- SELECT‑ASTs lesen `schema` nicht am Root. Nutze stattdessen:
+  - `from: ['table' => 'view_account', 'schema' => 'dbo']`
+  - oder `from: 'dbo.view_account'`
 
 WhereBuilder (kompakte WHERE + Params):
 ```php
