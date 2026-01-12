@@ -505,6 +505,14 @@ $objTotals['where'] = $where->conditions();
 $params = $where->params();
 ```
 
+Weitere Helper (Vergleiche + Kurzformen):
+```php
+$where->andLt('o.nTotal', 10);
+$where->orGte('o.nTotal', 100);
+$where->andLtParam('o.nTotal', 10, 'min_total');
+$where->andGteParam('o.nTotal', 100, 'max_total');
+```
+
 Gruppierung:
 ```php
 $where = new WhereBuilder();
