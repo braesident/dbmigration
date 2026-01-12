@@ -9,6 +9,9 @@ use stdClass;
 
 final class SqlBuilder
 {
+  /**
+   * Builds SQL from a builder definition and dialect.
+   */
   public static function build(string|array|object $definition, string|array $dialect): string|array
   {
     $context    = self::normalizeDialectContext($dialect);

@@ -24,12 +24,18 @@ final class SelectBuilder
   private ?int $offset = null;
   private array $unions = [];
 
+  /**
+   * Creates a SelectBuilder for the given dialect.
+   */
   public function __construct(string|array $dialect = 'mysql')
   {
     $this->context = self::normalizeDialectContext($dialect);
     $this->dialect = $this->context['dialect'];
   }
 
+  /**
+   * Builds a SELECT statement from a query, builder, or select definition.
+   */
   public static function build(mixed $selectOrQuery, string|array $dialect): string
   {
     if ($selectOrQuery instanceof self) {
@@ -43,6 +49,9 @@ final class SelectBuilder
     return self::buildSelectSql($selectOrQuery, $dialect);
   }
 
+  /**
+   * Renders a single expression into SQL.
+   */
   public static function expr(mixed $expr, string|array $dialect): string
   {
     $builder = new self($dialect);
@@ -50,6 +59,9 @@ final class SelectBuilder
     return $builder->renderExpr($expr);
   }
 
+  /**
+   * Renders a condition group into SQL.
+   */
   public static function condition(mixed $conditions, string|array $dialect, string $glue = 'AND'): string
   {
     $builder = new self($dialect);
@@ -57,6 +69,9 @@ final class SelectBuilder
     return $builder->renderConditionGroup($conditions, $glue);
   }
 
+  /**
+   * Creates a builder from a query definition.
+   */
   public static function fromQuery(mixed $query, string|array $dialect): self
   {
     if ($query instanceof self) {
@@ -69,6 +84,9 @@ final class SelectBuilder
     return $builder;
   }
 
+  /**
+   * Builds a function expression AST.
+   */
   public static function fn(string $name, mixed ...$args): array
   {
     return [
@@ -77,6 +95,9 @@ final class SelectBuilder
     ];
   }
 
+  /**
+   * Builds a binary operation expression AST.
+   */
   public static function calc(mixed $left, string $op, mixed $right): array
   {
     return [
@@ -86,6 +107,9 @@ final class SelectBuilder
     ];
   }
 
+  /**
+   * Builds a column reference expression AST.
+   */
   public static function col(string $name, ?string $as = null): array
   {
     $col = ['col' => $name];
@@ -96,11 +120,17 @@ final class SelectBuilder
     return $col;
   }
 
+  /**
+   * Builds a literal value expression AST.
+   */
   public static function val(mixed $value): array
   {
     return ['value' => $value];
   }
 
+  /**
+   * Builds a CASE WHEN item.
+   */
   public static function when(mixed $condition, mixed $then): array
   {
     return [
@@ -109,6 +139,9 @@ final class SelectBuilder
     ];
   }
 
+  /**
+   * Builds a CASE expression AST.
+   */
   public static function case(array $when, mixed $else = null): array
   {
     $case = ['when' => $when];
@@ -119,6 +152,9 @@ final class SelectBuilder
     return ['case' => $case];
   }
 
+  /**
+   * Enables or disables DISTINCT.
+   */
   public function distinct(bool $distinct = true): self
   {
     $this->distinct = $distinct;
@@ -126,6 +162,9 @@ final class SelectBuilder
     return $this;
   }
 
+  /**
+   * Adds a SELECT expression.
+   */
   public function select(mixed $expr, ?string $as = null): self
   {
     if (\is_string($as) && '' !== $as) {
@@ -139,6 +178,9 @@ final class SelectBuilder
     return $this;
   }
 
+  /**
+   * Sets the FROM clause.
+   */
   public function from(mixed $table, ?string $as = null): self
   {
     $this->from = $this->normalizeFrom($table, $as);
@@ -146,16 +188,25 @@ final class SelectBuilder
     return $this;
   }
 
+  /**
+   * Adds an INNER JOIN.
+   */
   public function join(mixed $table, ?string $as = null, mixed $on = null): self
   {
     return $this->addJoin('INNER', $table, $as, $on);
   }
 
+  /**
+   * Adds a LEFT JOIN.
+   */
   public function leftJoin(mixed $table, ?string $as = null, mixed $on = null): self
   {
     return $this->addJoin('LEFT', $table, $as, $on);
   }
 
+  /**
+   * Adds a RIGHT JOIN.
+   */
   public function rightJoin(mixed $table, ?string $as = null, mixed $on = null): self
   {
     return $this->addJoin('RIGHT', $table, $as, $on);
@@ -188,6 +239,9 @@ final class SelectBuilder
     return $this;
   }
 
+  /**
+   * Adds a WHERE condition.
+   */
   public function where(mixed $condition): self
   {
     if (null !== $condition) {
@@ -197,6 +251,9 @@ final class SelectBuilder
     return $this;
   }
 
+  /**
+   * Adds a HAVING condition.
+   */
   public function having(mixed $condition): self
   {
     if (null !== $condition) {
@@ -206,6 +263,9 @@ final class SelectBuilder
     return $this;
   }
 
+  /**
+   * Adds GROUP BY columns.
+   */
   public function groupBy(mixed $columns): self
   {
     foreach ($this->normalizeList($columns) as $column) {
@@ -215,6 +275,9 @@ final class SelectBuilder
     return $this;
   }
 
+  /**
+   * Adds an ORDER BY expression.
+   */
   public function orderBy(mixed $expr, ?string $direction = null): self
   {
     $this->orderBy[] = [
@@ -225,6 +288,9 @@ final class SelectBuilder
     return $this;
   }
 
+  /**
+   * Sets LIMIT and optional OFFSET.
+   */
   public function limit(?int $limit, ?int $offset = null): self
   {
     $this->limit  = $limit;
@@ -233,6 +299,9 @@ final class SelectBuilder
     return $this;
   }
 
+  /**
+   * Adds a UNION or UNION ALL query.
+   */
   public function union(mixed $query, bool $all = false): self
   {
     $this->unions[] = [
@@ -243,6 +312,9 @@ final class SelectBuilder
     return $this;
   }
 
+  /**
+   * Returns the final SELECT statement.
+   */
   public function statement(): string
   {
     $select = $this->select;

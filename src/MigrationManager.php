@@ -32,6 +32,9 @@ final class MigrationManager
 
   private MigrationHelper $helper;
 
+  /**
+   * Creates a migration manager bound to a PDO connection.
+   */
   public function __construct(
     private PDO $pdo,
     ?string $path = null,
@@ -47,6 +50,9 @@ final class MigrationManager
     $this->helper             = new MigrationHelper($this->path, $pdo, $this->migrationNamespace);
   }
 
+  /**
+   * Returns the latest executed migration id.
+   */
   public function getCurrentId(): int
   {
     $this->ensureDbMigrationTable();
@@ -68,6 +74,9 @@ final class MigrationManager
     return (int) $stmt->fetchColumn();
   }
 
+  /**
+   * Returns ids of executed migrations in ascending order.
+   */
   public function getExecutedMigrations(): array
   {
     $this->ensureDbMigrationTable();
@@ -97,6 +106,9 @@ final class MigrationManager
     return array_keys($this->executedMigrations);
   }
 
+  /**
+   * Loads available PHP/JSON migrations from disk.
+   */
   public function getMigrations(): array
   {
     if (\count($this->migrations) > 0) {
@@ -171,6 +183,9 @@ final class MigrationManager
     return $this->migrations;
   }
 
+  /**
+   * Checks whether the dbmigration table exists.
+   */
   public function isDbMigrationsInstalled(): bool
   {
     if ($this->isSqlServer()) {
@@ -194,6 +209,9 @@ final class MigrationManager
     return (bool) $stmt->fetchColumn();
   }
 
+  /**
+   * Migrates to a target id, relative offset, or latest migration.
+   */
   public function migrate($identifier = null): array
   {
     $this->ensureDbMigrationTable();
@@ -311,6 +329,9 @@ final class MigrationManager
     return $past[$index];
   }
 
+  /**
+   * Replaces the loaded migrations list.
+   */
   public function setMigrations(array $migrations): self
   {
     $this->migrations = $migrations;

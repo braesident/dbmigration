@@ -13,20 +13,32 @@ class Migration
   private $description;
   private ?array $dialectContext = null;
 
+  /**
+   * Creates a migration base instance.
+   */
   public function __construct(private PDO $pdo, private ?DateTimeImmutable $executed = null)
   {
   }
 
+  /**
+   * Returns the optional migration description.
+   */
   public function getDescription(): string
   {
     return $this->description ?? '';
   }
 
+  /**
+   * Returns the migration id derived from the class name.
+   */
   public function getId()
   {
     return MigrationHelper::mapClassNameToId($this->getName());
   }
 
+  /**
+   * Returns the fully-qualified migration class name.
+   */
   public function getName(): string
   {
     return static::class;

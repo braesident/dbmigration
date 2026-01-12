@@ -26,13 +26,16 @@ final class MigrationHelper
   private const MIGRATION_JSON_FILE_NAME_PATTERN = '/^Migration(\d{14}).json$/';
 
   /**
-   * MigrationHelper constructor.
+   * Prepares migration helpers for a filesystem path.
    */
   public function __construct(private string $path, private PDO $db, private string $migrationNamespace = 'Braesident\\migrations')
   {
     $this->migrationNamespace = trim($this->migrationNamespace, '\\');
   }
 
+  /**
+   * Extracts the migration id from a PHP filename.
+   */
   public function getIdFromFileName(string $fileName): ?int
   {
     $matches = [];
@@ -42,16 +45,25 @@ final class MigrationHelper
         : null;
   }
 
+  /**
+   * Checks whether a PHP migration filename is valid.
+   */
   public function isValidMigrationFileName(string $fileName): int|bool
   {
     return (bool) preg_match(self::MIGRATION_FILE_NAME_PATTERN, $fileName, $matches);
   }
 
+  /**
+   * Checks whether a JSON migration filename is valid.
+   */
   public function isValidMigrationJsonFileName(string $fileName): bool
   {
     return (bool) preg_match(self::MIGRATION_JSON_FILE_NAME_PATTERN, $fileName, $matches);
   }
 
+  /**
+   * Extracts the migration id from a JSON filename.
+   */
   public function getIdFromJsonFileName(string $fileName): ?int
   {
     $matches = [];
@@ -61,6 +73,9 @@ final class MigrationHelper
         : null;
   }
 
+  /**
+   * Returns the JSON migration path for an id, if it exists.
+   */
   public function getJsonPathForId(int $id): ?string
   {
     $fileName = 'Migration'.str_pad((string) $id, 14, '0', \STR_PAD_LEFT).'.json';
@@ -69,6 +84,9 @@ final class MigrationHelper
     return is_file($path) ? $path : null;
   }
 
+  /**
+   * Reads and decodes a JSON migration by id.
+   */
   public function readJsonMigration(int $id): ?array
   {
     $path = $this->getJsonPathForId($id);
@@ -89,6 +107,9 @@ final class MigrationHelper
     return $decoded;
   }
 
+  /**
+   * Maps a migration filename to the fully-qualified class name.
+   */
   public function mapFileNameToClassName(DirectoryIterator $file): string
   {
     return \sprintf(
@@ -98,6 +119,9 @@ final class MigrationHelper
     );
   }
 
+  /**
+   * Returns the default dbmigration table definition.
+   */
   public function getDbMigrationDefinition(): array
   {
     return [
@@ -121,6 +145,9 @@ final class MigrationHelper
     ];
   }
 
+  /**
+   * Extracts the migration id from a class name.
+   */
   public static function mapClassNameToId(string $className): ?int
   {
     $matches = [];

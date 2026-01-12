@@ -12,15 +12,24 @@ final class SqlRenderer
 {
   private ?array $dialectContext = null;
 
+  /**
+   * Creates a renderer for a specific PDO connection.
+   */
   public function __construct(private PDO $pdo)
   {
   }
 
+  /**
+   * Renders a SQL definition or AST into SQL.
+   */
   public function render(string|array|object $query): string|array|null
   {
     return $this->resolveQuery($query);
   }
 
+  /**
+   * Renders and flattens SQL into a list of statements.
+   */
   public function renderAll(string|array|object $query): array
   {
     $resolved = $this->render($query);
