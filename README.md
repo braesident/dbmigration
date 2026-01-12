@@ -12,6 +12,32 @@ Die JSON-Variante nutzt einen Builder (SqlBuilder) und kann Dialekt-SQL für mys
   - Dialekt-SQL: `{ "mysql": "...", "sqlsrv": "...", "sql": "...", "default": "..." }`
   - Optional: `only`/`exclude` (oder `dialects`/`include`) begrenzen Steps auf Dialekte, z.B. `{ "only": ["sqlsrv"] }`
 
+## PHP-Notation (Migration vs. Quellcode)
+
+- Migrationen: `$this->execute([...])` akzeptiert Arrays oder `(object)[...]` (JSON-ähnlich).
+- Quellcode: mit `SqlRenderer` nutzt du dieselbe Definition ohne Wrapper.
+
+Beispiel Migration:
+```php
+$this->execute([
+  'builder' => 'sql',
+  'definition' => [
+    'type' => 'insert',
+    'table' => 'config',
+    'values' => [['cIdentifier' => 'orderid_pad_sign', 'cDefault' => '0']]
+  ]
+]);
+```
+
+Beispiel Quellcode:
+```php
+$sql = $renderer->render([
+  'type' => 'insert',
+  'table' => 'config',
+  'values' => [['cIdentifier' => 'orderid_pad_sign', 'cDefault' => '0']]
+]);
+```
+
 ## Builder-Definitionen
 
 - `create_table`: Tabelle erzeugen (Spalten, PK, Unique, Indexe, FKs, Checks; optional `comment` pro Spalte)
@@ -81,6 +107,24 @@ VALUES (mehrere Zeilen):
 }
 ```
 
+PHP (Migration):
+```php
+$this->execute([
+  'builder' => 'sql',
+  'definition' => [
+    'type' => 'insert',
+    'table' => 'config',
+    'columns' => ['cIdentifier', 'cDefault', 'cValue'],
+    'values' => [
+      ['orderid_pad_sign', '0', null],
+      ['orderid_pad_count', '0', null],
+      ['customerid_pad_sign', '0', null],
+      ['customerid_pad_count', '0', null]
+    ]
+  ]
+]);
+```
+
 INSERT...SELECT (inkl. Subquery):
 ```json
 {
@@ -103,6 +147,30 @@ INSERT...SELECT (inkl. Subquery):
     }
   }
 }
+```
+
+PHP (Migration):
+```php
+$this->execute([
+  'builder' => 'sql',
+  'definition' => [
+    'type' => 'insert',
+    'table' => 'order_cases',
+    'columns' => ['cPrefix', 'nId', 'cPostfix'],
+    'query' => [
+      'select' => [
+        ['value' => ''],
+        ['query' => ['select' => 'kOrder', 'from' => 'order', 'order_by' => 'kOrder DESC', 'limit' => 1]],
+        ['value' => '']
+      ],
+      'where' => [
+        ['query' => ['select' => ['raw' => 'COUNT(*)'], 'from' => 'order']],
+        '>',
+        0
+      ]
+    ]
+  ]
+]);
 ```
 
 ## update
@@ -131,6 +199,23 @@ SET als Objekt (Spalte => Wert):
 }
 ```
 
+PHP (Migration):
+```php
+$this->execute([
+  'builder' => 'sql',
+  'definition' => [
+    'type' => 'update',
+    'table' => 'config',
+    'set' => [
+      'cValue' => '1'
+    ],
+    'where' => [
+      'cIdentifier' => 'orderid_pad_sign'
+    ]
+  ]
+]);
+```
+
 SET mit Ausdruck + Subquery:
 ```json
 {
@@ -155,6 +240,32 @@ SET mit Ausdruck + Subquery:
     ]
   }
 }
+```
+
+PHP (Migration):
+```php
+$this->execute([
+  'builder' => 'sql',
+  'definition' => [
+    'type' => 'update',
+    'table' => 'order_cases',
+    'set' => [
+      'nId' => [
+        'query' => [
+          'select' => 'kOrder',
+          'from' => 'order',
+          'order_by' => 'kOrder DESC',
+          'limit' => 1
+        ]
+      ]
+    ],
+    'where' => [
+      ['query' => ['select' => ['raw' => 'COUNT(*)'], 'from' => 'order']],
+      '>',
+      0
+    ]
+  ]
+]);
 ```
 
 Join-Update:
@@ -183,6 +294,32 @@ Join-Update:
 }
 ```
 
+PHP (Migration):
+```php
+$this->execute([
+  'builder' => 'sql',
+  'definition' => [
+    'type' => 'update',
+    'table' => 'order_cases',
+    'as' => 'oc',
+    'join' => [
+      [
+        'table' => 'order',
+        'as' => 'o',
+        'on' => ['o.kOrder', '=', 'oc.nId']
+      ]
+    ],
+    'set' => [
+      'cPrefix' => '',
+      'cPostfix' => '',
+      'nId' => ['col' => 'o.kOrder']
+    ],
+    'where' => ['o.eStatus', '<>', ['value' => 'deleted']],
+    'limit' => 10
+  ]
+]);
+```
+
 ## delete
 
 Unterstützt:
@@ -200,6 +337,19 @@ Einfaches DELETE:
     "limit": 1
   }
 }
+```
+
+PHP (Migration):
+```php
+$this->execute([
+  'builder' => 'sql',
+  'definition' => [
+    'type' => 'delete',
+    'table' => 'test_delete_parent',
+    'where' => ['cLabel', '=', ['value' => 'P2']],
+    'limit' => 1
+  ]
+]);
 ```
 
 Join-Delete:
@@ -220,6 +370,26 @@ Join-Delete:
     "where": ["p.cLabel", "=", { "value": "P1" }]
   }
 }
+```
+
+PHP (Migration):
+```php
+$this->execute([
+  'builder' => 'sql',
+  'definition' => [
+    'type' => 'delete',
+    'table' => 'test_delete_child',
+    'as' => 'c',
+    'join' => [
+      [
+        'table' => 'test_delete_parent',
+        'as' => 'p',
+        'on' => ['c.kParent', '=', 'p.kParent']
+      ]
+    ],
+    'where' => ['p.cLabel', '=', ['value' => 'P1']]
+  ]
+]);
 ```
 
 ## trigger
@@ -254,6 +424,38 @@ CREATE TRIGGER mit dialektspezifischem `body` (MySQL nutzt `OLD`, SQL Server `de
     }
   }
 }
+```
+
+PHP (Migration):
+```php
+$this->execute([
+  'builder' => 'sql',
+  'definition' => [
+    'type' => 'create_trigger',
+    'name' => 'trg_test_trigger_source_delete',
+    'table' => 'test_trigger_source',
+    'schema' => 'dbo',
+    'timing' => 'after',
+    'event' => 'delete',
+    'body' => [
+      'mysql' => [
+        'type' => 'insert',
+        'table' => 'test_trigger_log',
+        'columns' => ['kSource', 'cAction'],
+        'values' => [[['raw' => 'OLD.kSource'], 'deleted']]
+      ],
+      'sqlsrv' => [
+        'type' => 'insert',
+        'table' => 'test_trigger_log',
+        'columns' => ['kSource', 'cAction'],
+        'query' => [
+          'select' => ['kSource', ['value' => 'deleted']],
+          'from' => 'deleted'
+        ]
+      ]
+    ]
+  ]
+]);
 ```
 
 ## SqlRenderer
@@ -350,6 +552,31 @@ JSON (query-basierter View):
     }
   }
 }
+```
+
+PHP (Migration, Builder-Definition):
+```php
+$this->execute([
+  'builder' => 'sql',
+  'definition' => [
+    'type' => 'create_view',
+    'view' => 'view_material_product',
+    'replace' => true,
+    'query' => [
+      'select' => [
+        'mp.*',
+        ['expr' => ['op' => '+', 'left' => 'mp.nStock', 'right' => ['fn' => 'ifnull', 'args' => [['fn' => 'sum', 'args' => ['su.nQuantity']], 0]]], 'as' => 'nTotal_stock'],
+        ['col' => 'mc.cName', 'as' => 'cOrigin']
+      ],
+      'from' => ['table' => 'material_product', 'as' => 'mp'],
+      'left_join' => [
+        ['table' => 'storage_unit', 'as' => 'su', 'on' => ['mp.kMaterial_product', '=', 'su.kProduct']],
+        ['table' => 'material_category', 'as' => 'mc', 'on' => ['mc.kMaterial_category', '=', 'mp.kCategory']]
+      ],
+      'group_by' => ['mp.kMaterial_product']
+    ]
+  ]
+]);
 ```
 
 PHP (fluent API):
