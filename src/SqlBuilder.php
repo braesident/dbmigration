@@ -1112,9 +1112,134 @@ final class SqlBuilder
         case 'drop_foreign_key':
           $name = (string) ($action['name'] ?? '');
           if ('' === $name) {
-            throw new InvalidArgumentException('drop_foreign_key benötigt "name".');
-          }
-          if ('sqlsrv' === $dialect) {
+            $columns = $action['columns'] ?? $action['column'] ?? null;
+            if (null !== $columns && ! \is_array($columns)) {
+              $columns = [$columns];
+            }
+            $columns = \is_array($columns)
+              ? array_values(array_filter($columns, static fn ($col) => \is_string($col) && '' !== trim($col)))
+              : [];
+
+            $refColumns = $action['refColumns'] ?? $action['ref_columns'] ?? null;
+            if (null !== $refColumns && ! \is_array($refColumns)) {
+              $refColumns = [$refColumns];
+            }
+            $refColumns = \is_array($refColumns)
+              ? array_values(array_filter($refColumns, static fn ($col) => \is_string($col) && '' !== trim($col)))
+              : [];
+
+            $refTable = $action['refTable'] ?? $action['ref_table'] ?? null;
+            $refTable = \is_string($refTable) ? trim($refTable) : null;
+            if ('' === $refTable) {
+              $refTable = null;
+            }
+            $refSchema = $action['refSchema'] ?? $action['ref_schema'] ?? null;
+            $refSchema = \is_string($refSchema) ? trim($refSchema) : null;
+            if ('' === $refSchema) {
+              $refSchema = null;
+            }
+
+            if ('sqlsrv' === $dialect && ([] !== $columns || [] !== $refColumns || null !== $refTable)) {
+              if ([] !== $columns && [] !== $refColumns && \count($columns) !== \count($refColumns)) {
+                throw new InvalidArgumentException('drop_foreign_key erwartet gleich viele columns und refColumns.');
+              }
+
+              $schemaName = str_replace("'", "''", $schema);
+              $tableName  = str_replace("'", "''", $table);
+              $conditions = [
+                "s.name = '".$schemaName."'",
+                "t.name = '".$tableName."'"
+              ];
+
+              if (null !== $refTable) {
+                $refSchemaName = str_replace("'", "''", $refSchema ?? $schema);
+                $refTableName  = str_replace("'", "''", $refTable);
+                $conditions[] = "rs.name = '".$refSchemaName."' AND rt.name = '".$refTableName."'";
+              }
+
+              $havingParts = [];
+              if ([] !== $columns) {
+                $colList  = implode("','", array_map(static fn ($col) => str_replace("'", "''", $col), $columns));
+                $colCount = \count($columns);
+                $havingParts[] = "COUNT(*) = ".$colCount." AND SUM(CASE WHEN c.name IN ('".$colList."') THEN 1 ELSE 0 END) = ".$colCount;
+              }
+              if ([] !== $refColumns) {
+                $refColList  = implode("','", array_map(static fn ($col) => str_replace("'", "''", $col), $refColumns));
+                $refColCount = \count($refColumns);
+                $havingParts[] = "COUNT(*) = ".$refColCount." AND SUM(CASE WHEN rc.name IN ('".$refColList."') THEN 1 ELSE 0 END) = ".$refColCount;
+              }
+
+              $whereSql  = implode(' AND ', $conditions);
+              $havingSql = [] !== $havingParts ? 'HAVING '.implode(' AND ', $havingParts) : '';
+
+              $statements[] = "DECLARE @sql nvarchar(max) = N'';\n"
+                ."SELECT @sql = @sql + N'ALTER TABLE ".$tableRef." DROP CONSTRAINT [' + fk.name + N'];' \n"
+                ."FROM sys.foreign_keys fk\n"
+                ."JOIN sys.tables t ON fk.parent_object_id = t.object_id\n"
+                ."JOIN sys.schemas s ON t.schema_id = s.schema_id\n"
+                ."JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id\n"
+                ."JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id\n"
+                ."JOIN sys.tables rt ON fk.referenced_object_id = rt.object_id\n"
+                ."JOIN sys.schemas rs ON rt.schema_id = rs.schema_id\n"
+                ."JOIN sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id\n"
+                ."WHERE ".$whereSql."\n"
+                ."GROUP BY fk.name, fk.parent_object_id, fk.referenced_object_id\n"
+                .('' !== $havingSql ? $havingSql."\n" : '')
+                ."IF (@sql <> N'') EXEC sp_executesql @sql;";
+            } elseif ('mysql' === $dialect && ([] !== $columns || [] !== $refColumns || null !== $refTable)) {
+              if ([] !== $columns && [] !== $refColumns && \count($columns) !== \count($refColumns)) {
+                throw new InvalidArgumentException('drop_foreign_key erwartet gleich viele columns und refColumns.');
+              }
+
+              $schemaName = $schema && 'dbo' !== $schema ? str_replace("'", "''", $schema) : null;
+              $tableName  = str_replace("'", "''", $table);
+              $conditions = [
+                ($schemaName ? "TABLE_SCHEMA = '".$schemaName."'" : 'TABLE_SCHEMA = DATABASE()'),
+                "TABLE_NAME = '".$tableName."'",
+                "REFERENCED_TABLE_NAME IS NOT NULL"
+              ];
+
+              if (null !== $refTable) {
+                $refSchemaName = $refSchema && 'dbo' !== $refSchema ? str_replace("'", "''", $refSchema) : null;
+                $refTableName  = str_replace("'", "''", $refTable);
+                $conditions[] = "REFERENCED_TABLE_NAME = '".$refTableName."'";
+                $conditions[] = $refSchemaName ? "REFERENCED_TABLE_SCHEMA = '".$refSchemaName."'" : 'REFERENCED_TABLE_SCHEMA = DATABASE()';
+              }
+
+              $havingParts = [];
+              if ([] !== $columns) {
+                $colList  = implode("','", array_map(static fn ($col) => str_replace("'", "''", $col), $columns));
+                $colCount = \count($columns);
+                $havingParts[] = "COUNT(*) = ".$colCount." AND SUM(CASE WHEN COLUMN_NAME IN ('".$colList."') THEN 1 ELSE 0 END) = ".$colCount;
+              }
+              if ([] !== $refColumns) {
+                $refColList  = implode("','", array_map(static fn ($col) => str_replace("'", "''", $col), $refColumns));
+                $refColCount = \count($refColumns);
+                $havingParts[] = "COUNT(*) = ".$refColCount." AND SUM(CASE WHEN REFERENCED_COLUMN_NAME IN ('".$refColList."') THEN 1 ELSE 0 END) = ".$refColCount;
+              }
+
+              $whereSql  = implode(' AND ', $conditions);
+              $havingSql = [] !== $havingParts ? 'HAVING '.implode(' AND ', $havingParts) : '';
+
+              $statements[] = "SET @sql := (\n"
+                ."SELECT GROUP_CONCAT(CONCAT('ALTER TABLE `".$tableName."` DROP FOREIGN KEY `', CONSTRAINT_NAME, '`') SEPARATOR '; ')\n"
+                ."FROM (\n"
+                ."  SELECT CONSTRAINT_NAME\n"
+                ."  FROM information_schema.KEY_COLUMN_USAGE\n"
+                ."  WHERE ".$whereSql."\n"
+                ."  GROUP BY CONSTRAINT_NAME\n"
+                .('' !== $havingSql ? '  '.$havingSql."\n" : '')
+                .") AS _fk\n"
+                .")";
+              $statements[] = "SET @sql := IFNULL(@sql, '')";
+              $statements[] = "SET @sql := IF(@sql = '', 'SELECT 1', @sql)";
+              $statements[] = "PREPARE stmt FROM @sql";
+              $statements[] = "EXECUTE stmt";
+              $statements[] = "DEALLOCATE PREPARE stmt";
+            } else {
+              throw new InvalidArgumentException('drop_foreign_key benötigt "name" oder filter (columns/refTable).');
+            }
+          } elseif ('sqlsrv' === $dialect) {
             $statements[] = 'ALTER TABLE '.$tableRef.' DROP CONSTRAINT ['.$name.']';
           } else {
             $statements[] = 'ALTER TABLE '.$tableRef.' DROP FOREIGN KEY `'.$name.'`';

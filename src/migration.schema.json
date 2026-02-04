@@ -1384,11 +1384,41 @@
         "name": {
           "type": "string",
           "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
+        },
+        "refTable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "refColumns": {
+          "$ref": "#/$defs/columnList"
+        },
+        "refSchema": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
-        "action",
-        "name"
+        "action"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "required": [
+            "columns"
+          ]
+        },
+        {
+          "required": [
+            "refTable"
+          ]
+        }
       ]
     },
     "column": {

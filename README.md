@@ -70,8 +70,11 @@ $sql = $renderer->render([
 Hinweise:
 - mysql: `rename_table` nutzt `RENAME TABLE`, sqlsrv nutzt `sp_rename`.
 - sqlsrv: `drop_primary_key` benötigt den Constraint-Namen.
+- mysql: Foreign-Key-Namen werden vergeben; wenn kein `name` gesetzt ist, erzeugt MySQL automatische Namen (z. B. `table_ibfk_1`). Zum Droppen wird trotzdem der Name benötigt.
+- mysql: `drop_foreign_key` kann optional `columns`/`refTable` nutzen und ermittelt die Namen via `information_schema` (läuft als mehrere Statements mit `PREPARE`).
 - sqlsrv: `drop_unique`/`drop_index` können alternativ `columns` nutzen, wenn der Name unbekannt ist (es wird anhand der Spaltenkombination gesucht).
 - sqlsrv: `drop_default` kann `columns` nutzen und entfernt Default-Constraints per sys.default_constraints.
+- sqlsrv: `drop_foreign_key` kann `columns` und/oder `refTable` nutzen, wenn der Name unbekannt ist.
 - Views: `create_view` nutzt in mysql `CREATE OR REPLACE VIEW`. In sqlsrv wird bei `replace=true` zuerst eine Dummy-View erzeugt und dann `ALTER VIEW` genutzt.
 - Views: `select` kann ein String, ein String-Array oder ein Dialekt-Map sein (z.B. `{ "mysql": [...], "sqlsrv": [...] }`).
 - Views: Alternativ kann `query` verwendet werden (JSON-Query-Builder). Dann wird der SELECT aus der Struktur gebaut.
@@ -89,6 +92,21 @@ Beispiel (Default-Constraint entfernen, sqlsrv):
     "actions": [
       { "action": "drop_default", "columns": ["cShort", "kVehicle_storage"] },
       { "action": "drop_column", "name": "kVehicle_storage" }
+    ]
+  }
+}
+```
+
+Beispiel (Foreign Key ohne Namen entfernen, sqlsrv):
+```json
+{
+  "builder": "sql",
+  "definition": {
+    "type": "alter_table",
+    "table": "storage_unit",
+    "schema": "dbo",
+    "actions": [
+      { "action": "drop_foreign_key", "refTable": "vehicle_storage" }
     ]
   }
 }
