@@ -959,6 +959,9 @@
           "$ref": "#/$defs/dropUniqueAction"
         },
         {
+          "$ref": "#/$defs/dropDefaultAction"
+        },
+        {
           "$ref": "#/$defs/addCheckAction"
         },
         {
@@ -1192,6 +1195,37 @@
       "properties": {
         "action": {
           "const": "drop_unique"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "required": [
+            "columns"
+          ]
+        }
+      ]
+    },
+    "dropDefaultAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "drop_default"
         },
         "name": {
           "type": "string",

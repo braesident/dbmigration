@@ -1005,6 +1005,44 @@ final class SqlBuilder
           }
           break;
 
+        case 'drop_default':
+          $name = (string) ($action['name'] ?? '');
+          if ('' === $name) {
+            $columns = $action['columns'] ?? $action['column'] ?? null;
+            if (null !== $columns && ! \is_array($columns)) {
+              $columns = [$columns];
+            }
+            $columns = \is_array($columns)
+              ? array_values(array_filter($columns, static fn ($col) => \is_string($col) && '' !== trim($col)))
+              : [];
+
+            if ('sqlsrv' === $dialect && [] !== $columns) {
+              $schemaName = str_replace("'", "''", $schema);
+              $tableName  = str_replace("'", "''", $table);
+              $colList    = implode("','", array_map(static fn ($col) => str_replace("'", "''", $col), $columns));
+
+              $statements[] = "DECLARE @sql nvarchar(max) = N'';\n"
+                ."SELECT @sql = @sql + N'ALTER TABLE ".$tableRef." DROP CONSTRAINT [' + dc.name + N'];' \n"
+                ."FROM sys.default_constraints dc\n"
+                ."JOIN sys.tables t ON dc.parent_object_id = t.object_id\n"
+                ."JOIN sys.schemas s ON t.schema_id = s.schema_id\n"
+                ."JOIN sys.columns c ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id\n"
+                ."WHERE t.name = '".$tableName."' AND s.name = '".$schemaName."' AND c.name IN ('".$colList."');\n"
+                ."IF (@sql <> N'') EXEC sp_executesql @sql;";
+            } elseif ([] !== $columns) {
+              foreach ($columns as $column) {
+                $statements[] = 'ALTER TABLE '.$tableRef.' ALTER COLUMN `'.$column.'` DROP DEFAULT';
+              }
+            } else {
+              throw new InvalidArgumentException('drop_default benötigt "name" oder "columns".');
+            }
+          } elseif ('sqlsrv' === $dialect) {
+            $statements[] = 'ALTER TABLE '.$tableRef.' DROP CONSTRAINT ['.$name.']';
+          } else {
+            $statements[] = 'ALTER TABLE '.$tableRef.' ALTER COLUMN `'.$name.'` DROP DEFAULT';
+          }
+          break;
+
         case 'add_check':
           $checkDef = $action['check'] ?? null;
           if (null === $checkDef) {
