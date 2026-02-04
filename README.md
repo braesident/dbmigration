@@ -69,6 +69,7 @@ $sql = $renderer->render([
 Hinweise:
 - mysql: `rename_table` nutzt `RENAME TABLE`, sqlsrv nutzt `sp_rename`.
 - sqlsrv: `drop_primary_key` benötigt den Constraint-Namen.
+- sqlsrv: `drop_unique`/`drop_index` können alternativ `columns` nutzen, wenn der Name unbekannt ist (es wird anhand der Spaltenkombination gesucht).
 - Views: `create_view` nutzt in mysql `CREATE OR REPLACE VIEW`. In sqlsrv wird bei `replace=true` zuerst eine Dummy-View erzeugt und dann `ALTER VIEW` genutzt.
 - Views: `select` kann ein String, ein String-Array oder ein Dialekt-Map sein (z.B. `{ "mysql": [...], "sqlsrv": [...] }`).
 - Views: Alternativ kann `query` verwendet werden (JSON-Query-Builder). Dann wird der SELECT aus der Struktur gebaut.

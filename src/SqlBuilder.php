@@ -911,9 +911,35 @@ final class SqlBuilder
         case 'drop_index':
           $name = (string) ($action['name'] ?? '');
           if ('' === $name) {
-            throw new InvalidArgumentException('drop_index benötigt "name".');
-          }
-          if ('sqlsrv' === $dialect) {
+            $columns = $action['columns'] ?? $action['column'] ?? null;
+            if (null !== $columns && ! \is_array($columns)) {
+              $columns = [$columns];
+            }
+            $columns = \is_array($columns)
+              ? array_values(array_filter($columns, static fn ($col) => \is_string($col) && '' !== trim($col)))
+              : [];
+
+            if ('sqlsrv' === $dialect && [] !== $columns) {
+              $schemaName = str_replace("'", "''", $schema);
+              $tableName  = str_replace("'", "''", $table);
+              $colList    = implode("','", array_map(static fn ($col) => str_replace("'", "''", $col), $columns));
+              $colCount   = \count($columns);
+
+              $statements[] = "DECLARE @sql nvarchar(max) = N'';\n"
+                ."SELECT @sql = @sql + N'DROP INDEX [' + i.name + N'] ON ".$tableRef.";' \n"
+                ."FROM sys.indexes i\n"
+                ."JOIN sys.tables t ON i.object_id = t.object_id\n"
+                ."JOIN sys.schemas s ON t.schema_id = s.schema_id\n"
+                ."JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id\n"
+                ."JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id\n"
+                ."WHERE t.name = '".$tableName."' AND s.name = '".$schemaName."' AND i.is_primary_key = 0 AND i.is_unique_constraint = 0\n"
+                ."GROUP BY i.name, i.object_id\n"
+                ."HAVING COUNT(*) = ".$colCount." AND SUM(CASE WHEN c.name IN ('".$colList."') THEN 1 ELSE 0 END) = ".$colCount.";\n"
+                ."IF (@sql <> N'') EXEC sp_executesql @sql;";
+            } else {
+              throw new InvalidArgumentException('drop_index benötigt "name" oder "columns".');
+            }
+          } elseif ('sqlsrv' === $dialect) {
             $statements[] = 'DROP INDEX ['.$name.'] ON '.$tableRef;
           } else {
             $statements[] = 'ALTER TABLE '.$tableRef.' DROP INDEX `'.$name.'`';
@@ -935,9 +961,44 @@ final class SqlBuilder
         case 'drop_unique':
           $name = (string) ($action['name'] ?? '');
           if ('' === $name) {
-            throw new InvalidArgumentException('drop_unique benötigt "name".');
-          }
-          if ('sqlsrv' === $dialect) {
+            $columns = $action['columns'] ?? $action['column'] ?? null;
+            if (null !== $columns && ! \is_array($columns)) {
+              $columns = [$columns];
+            }
+            $columns = \is_array($columns)
+              ? array_values(array_filter($columns, static fn ($col) => \is_string($col) && '' !== trim($col)))
+              : [];
+
+            if ('sqlsrv' === $dialect && [] !== $columns) {
+              $schemaName = str_replace("'", "''", $schema);
+              $tableName  = str_replace("'", "''", $table);
+              $colList    = implode("','", array_map(static fn ($col) => str_replace("'", "''", $col), $columns));
+              $colCount   = \count($columns);
+
+              $statements[] = "DECLARE @sql nvarchar(max) = N'';\n"
+                ."SELECT @sql = @sql + N'ALTER TABLE ".$tableRef." DROP CONSTRAINT [' + kc.name + N'];' \n"
+                ."FROM sys.key_constraints kc\n"
+                ."JOIN sys.tables t ON kc.parent_object_id = t.object_id\n"
+                ."JOIN sys.schemas s ON t.schema_id = s.schema_id\n"
+                ."JOIN sys.index_columns ic ON kc.parent_object_id = ic.object_id AND kc.unique_index_id = ic.index_id\n"
+                ."JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id\n"
+                ."WHERE t.name = '".$tableName."' AND s.name = '".$schemaName."' AND kc.[type] = 'UQ'\n"
+                ."GROUP BY kc.name, kc.parent_object_id\n"
+                ."HAVING COUNT(*) = ".$colCount." AND SUM(CASE WHEN c.name IN ('".$colList."') THEN 1 ELSE 0 END) = ".$colCount.";\n"
+                ."SELECT @sql = @sql + N'DROP INDEX [' + i.name + N'] ON ".$tableRef.";' \n"
+                ."FROM sys.indexes i\n"
+                ."JOIN sys.tables t ON i.object_id = t.object_id\n"
+                ."JOIN sys.schemas s ON t.schema_id = s.schema_id\n"
+                ."JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id\n"
+                ."JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id\n"
+                ."WHERE t.name = '".$tableName."' AND s.name = '".$schemaName."' AND i.is_unique = 1 AND i.is_primary_key = 0 AND i.is_unique_constraint = 0\n"
+                ."GROUP BY i.name, i.object_id\n"
+                ."HAVING COUNT(*) = ".$colCount." AND SUM(CASE WHEN c.name IN ('".$colList."') THEN 1 ELSE 0 END) = ".$colCount.";\n"
+                ."IF (@sql <> N'') EXEC sp_executesql @sql;";
+            } else {
+              throw new InvalidArgumentException('drop_unique benötigt "name" oder "columns".');
+            }
+          } elseif ('sqlsrv' === $dialect) {
             $statements[] = 'ALTER TABLE '.$tableRef.' DROP CONSTRAINT ['.$name.']';
           } else {
             $statements[] = 'ALTER TABLE '.$tableRef.' DROP INDEX `'.$name.'`';
