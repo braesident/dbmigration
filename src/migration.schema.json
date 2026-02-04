@@ -1131,11 +1131,25 @@
         "name": {
           "type": "string",
           "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
         }
       },
       "required": [
-        "action",
-        "name"
+        "action"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "required": [
+            "columns"
+          ]
+        }
       ]
     },
     "addUniqueAction": {
@@ -1182,11 +1196,25 @@
         "name": {
           "type": "string",
           "minLength": 1
+        },
+        "columns": {
+          "$ref": "#/$defs/columnList"
         }
       },
       "required": [
-        "action",
-        "name"
+        "action"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "required": [
+            "columns"
+          ]
+        }
       ]
     },
     "addCheckAction": {
