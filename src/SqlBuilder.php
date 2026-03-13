@@ -936,6 +936,33 @@ final class SqlBuilder
                 ."GROUP BY i.name, i.object_id\n"
                 ."HAVING COUNT(*) = ".$colCount." AND SUM(CASE WHEN c.name IN ('".$colList."') THEN 1 ELSE 0 END) = ".$colCount.";\n"
                 ."IF (@sql <> N'') EXEC sp_executesql @sql;";
+            } elseif ('mysql' === $dialect && [] !== $columns) {
+              $schemaName = $schema && 'dbo' !== $schema ? str_replace("'", "''", $schema) : null;
+              $tableName  = str_replace("'", "''", $table);
+              $colList    = implode("','", array_map(static fn ($col) => str_replace("'", "''", $col), $columns));
+              $colCount   = \count($columns);
+
+              $whereParts = [
+                ($schemaName ? "TABLE_SCHEMA = '".$schemaName."'" : 'TABLE_SCHEMA = DATABASE()'),
+                "TABLE_NAME = '".$tableName."'",
+                "INDEX_NAME <> 'PRIMARY'"
+              ];
+
+              $statements[] = "SET @sql := (\n"
+                ."SELECT GROUP_CONCAT(CONCAT('ALTER TABLE `".$tableName."` DROP INDEX `', INDEX_NAME, '`') SEPARATOR '; ')\n"
+                ."FROM (\n"
+                ."  SELECT INDEX_NAME\n"
+                ."  FROM information_schema.STATISTICS\n"
+                ."  WHERE ".implode(' AND ', $whereParts)."\n"
+                ."  GROUP BY INDEX_NAME\n"
+                ."  HAVING COUNT(*) = ".$colCount." AND SUM(CASE WHEN COLUMN_NAME IN ('".$colList."') THEN 1 ELSE 0 END) = ".$colCount."\n"
+                .") AS _idx\n"
+                .")";
+              $statements[] = "SET @sql := IFNULL(@sql, '')";
+              $statements[] = "SET @sql := IF(@sql = '', 'SELECT 1', @sql)";
+              $statements[] = "PREPARE stmt FROM @sql";
+              $statements[] = "EXECUTE stmt";
+              $statements[] = "DEALLOCATE PREPARE stmt";
             } else {
               throw new InvalidArgumentException('drop_index benötigt "name" oder "columns".');
             }
@@ -995,6 +1022,34 @@ final class SqlBuilder
                 ."GROUP BY i.name, i.object_id\n"
                 ."HAVING COUNT(*) = ".$colCount." AND SUM(CASE WHEN c.name IN ('".$colList."') THEN 1 ELSE 0 END) = ".$colCount.";\n"
                 ."IF (@sql <> N'') EXEC sp_executesql @sql;";
+            } elseif ('mysql' === $dialect && [] !== $columns) {
+              $schemaName = $schema && 'dbo' !== $schema ? str_replace("'", "''", $schema) : null;
+              $tableName  = str_replace("'", "''", $table);
+              $colList    = implode("','", array_map(static fn ($col) => str_replace("'", "''", $col), $columns));
+              $colCount   = \count($columns);
+
+              $whereParts = [
+                ($schemaName ? "TABLE_SCHEMA = '".$schemaName."'" : 'TABLE_SCHEMA = DATABASE()'),
+                "TABLE_NAME = '".$tableName."'",
+                "INDEX_NAME <> 'PRIMARY'",
+                'NON_UNIQUE = 0'
+              ];
+
+              $statements[] = "SET @sql := (\n"
+                ."SELECT GROUP_CONCAT(CONCAT('ALTER TABLE `".$tableName."` DROP INDEX `', INDEX_NAME, '`') SEPARATOR '; ')\n"
+                ."FROM (\n"
+                ."  SELECT INDEX_NAME\n"
+                ."  FROM information_schema.STATISTICS\n"
+                ."  WHERE ".implode(' AND ', $whereParts)."\n"
+                ."  GROUP BY INDEX_NAME\n"
+                ."  HAVING COUNT(*) = ".$colCount." AND SUM(CASE WHEN COLUMN_NAME IN ('".$colList."') THEN 1 ELSE 0 END) = ".$colCount."\n"
+                .") AS _uq\n"
+                .")";
+              $statements[] = "SET @sql := IFNULL(@sql, '')";
+              $statements[] = "SET @sql := IF(@sql = '', 'SELECT 1', @sql)";
+              $statements[] = "PREPARE stmt FROM @sql";
+              $statements[] = "EXECUTE stmt";
+              $statements[] = "DEALLOCATE PREPARE stmt";
             } else {
               throw new InvalidArgumentException('drop_unique benötigt "name" oder "columns".');
             }

@@ -72,7 +72,7 @@ Hinweise:
 - sqlsrv: `drop_primary_key` benötigt den Constraint-Namen.
 - mysql: Foreign-Key-Namen werden vergeben; wenn kein `name` gesetzt ist, erzeugt MySQL automatische Namen (z. B. `table_ibfk_1`). Zum Droppen wird trotzdem der Name benötigt.
 - mysql: `drop_foreign_key` kann optional `columns`/`refTable` nutzen und ermittelt die Namen via `information_schema` (läuft als mehrere Statements mit `PREPARE`).
-- sqlsrv: `drop_unique`/`drop_index` können alternativ `columns` nutzen, wenn der Name unbekannt ist (es wird anhand der Spaltenkombination gesucht).
+- mysql/sqlsrv: `drop_unique`/`drop_index` können alternativ `columns` nutzen, wenn der Name unbekannt ist (Lookup über Katalogtabellen).
 - sqlsrv: `drop_default` kann `columns` nutzen und entfernt Default-Constraints per sys.default_constraints.
 - sqlsrv: `drop_foreign_key` kann `columns` und/oder `refTable` nutzen, wenn der Name unbekannt ist.
 - Views: `create_view` nutzt in mysql `CREATE OR REPLACE VIEW`. In sqlsrv wird bei `replace=true` zuerst eine Dummy-View erzeugt und dann `ALTER VIEW` genutzt.
